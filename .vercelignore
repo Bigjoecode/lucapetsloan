@@ -1,0 +1,6 @@
+install.lock
+uploads
+.kilocode
+.qodo
+.env
+.env.*

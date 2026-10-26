@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "api/index.php": {
+      "runtime": "vercel-php@0.7.4",
+      "excludeFiles": "{uploads/**,.git/**,README.md}"
+    }
+  },
+  "routes": [
+    { "src": "/assets/(.*)", "dest": "/assets/$1", "headers": { "cache-control": "public, max-age=3600" } },
+    { "src": "/(.*)", "dest": "/api/index.php" }
+  ]
+}

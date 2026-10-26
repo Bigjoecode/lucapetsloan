@@ -1,0 +1,15 @@
+# Local state
+install.lock
+uploads/*
+!uploads/.htaccess
+.env
+.env.*
+
+# Tooling
+.vercel
+.kilocode/
+.qodo/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
