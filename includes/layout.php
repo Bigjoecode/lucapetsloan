@@ -69,7 +69,7 @@ function render_flashes(): string
     return $html;
 }
 
-function html_head(string $title): void
+function html_head(string $title, array $extraCss = []): void
 {
     ?><!doctype html>
 <html lang="en" data-currency="<?= e(CURRENCY) ?>">
@@ -80,8 +80,10 @@ function html_head(string $title): void
 <title><?= e($title) ?> · <?= e(APP_NAME) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=1">
+<?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
+<?php endforeach; ?>
 </head>
 <?php
 }
