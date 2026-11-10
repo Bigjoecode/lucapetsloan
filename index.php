@@ -165,7 +165,7 @@ html_head(APP_TAGLINE, ['landing.css']);
           <span class="l-ic"><?= icon('piggy', 18) ?></span>
           <div>
             <h3>Daily savings, digitally</h3>
-            <p>Pay in by transfer, card, USSD or a field agent. Every balance earns <?= setting('savings_daily_rate') ?>% interest a day while your streak grows.</p>
+            <p>Pay in by transfer, card, USSD or a field agent. Every balance earns <?= setting('savings_annual_rate') ?>% a year, added daily, while your streak grows.</p>
           </div>
         </div>
         <div class="l-panel">
@@ -269,7 +269,7 @@ html_head(APP_TAGLINE, ['landing.css']);
       </details>
       <details>
         <summary>How do daily savings work?</summary>
-        <p>Open a plan with a daily amount, for example <?= money0(500) ?>, then pay in each day by bank transfer, card, USSD or through a field agent. Your balance goes up once the payment is confirmed, earns <?= setting('savings_daily_rate') ?>% interest every day, and you can withdraw to your bank account.</p>
+        <p>Open a plan with a daily amount, for example <?= money0(500) ?>, then pay in each day by bank transfer, card, USSD or through a field agent. Your balance goes up once the payment is confirmed, earns <?= setting('savings_annual_rate') ?>% interest a year (added every day), and you can withdraw to your bank account.</p>
       </details>
       <details>
         <summary>Can I use my savings to repay my loan?</summary>
@@ -321,6 +321,6 @@ html_head(APP_TAGLINE, ['landing.css']);
   </div>
 </footer>
 
-<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=6"></script>
 </body>
 </html>

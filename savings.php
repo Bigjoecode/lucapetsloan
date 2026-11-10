@@ -143,10 +143,11 @@ app_header('Savings', 'savings');
 <h1 class="mobile-title">Savings</h1>
 
 <div class="card hero-card row between">
-  <div class="stat"><span class="k">Total saved across <?= count($plans) ?> plan<?= count($plans) === 1 ? '' : 's' ?></span><span class="v"><?= money($total) ?></span><span class="s">Earning <?= setting('savings_daily_rate') ?>% interest every day · <?= money($earned) ?> earned so far</span></div>
+  <div class="stat"><span class="k">Total saved across <?= count($plans) ?> plan<?= count($plans) === 1 ? '' : 's' ?></span><span class="v"><?= money($total) ?></span><span class="s">Earning <?= setting('savings_annual_rate') ?>% a year, added daily · <?= money($earned) ?> earned so far</span></div>
   <div class="row">
     <button class="btn btn-accent btn-sm" data-open="dlg-deposit"><?= icon('plus', 16) ?> Deposit</button>
     <button class="btn btn-light btn-sm" data-open="dlg-withdraw" id="withdraw"><?= icon('up', 16) ?> Withdraw</button>
+    <a class="btn btn-light btn-sm" href="<?= url('ajo.php') ?>"><?= icon('users', 16) ?> Save with friends</a>
   </div>
 </div>
 
@@ -169,7 +170,7 @@ app_header('Savings', 'savings');
       <?= badge($p['status']) ?>
     </div>
     <div class="row between">
-      <div class="stat"><span class="k">Balance</span><span class="v"><?= money($p['balance']) ?></span><span class="s">+<?= money($p['interest_earned']) ?> interest · about <?= money((float)$p['balance'] * setting('savings_daily_rate') / 100) ?> tomorrow</span></div>
+      <div class="stat"><span class="k">Balance</span><span class="v"><?= money($p['balance']) ?></span><span class="s">+<?= money($p['interest_earned']) ?> interest · about <?= money((float)$p['balance'] * savings_daily_rate() / 100) ?> tomorrow</span></div>
       <?php if ($streak): ?><span class="streak"><?= icon('fire', 16) ?><?= $streak ?>-day streak</span><?php endif; ?>
     </div>
     <?php if ($pct !== null): ?>
@@ -227,7 +228,7 @@ app_header('Savings', 'savings');
 
   <div class="card" id="new">
     <h2>New savings plan</h2>
-    <p class="muted small">Set a daily amount you can keep up with. Every plan earns <?= setting('savings_daily_rate') ?>% interest per day on its balance, and a steady saving record helps your loan application.</p>
+    <p class="muted small">Set a daily amount you can keep up with. Every plan earns <?= setting('savings_annual_rate') ?>% interest a year on its balance, added every day, and a steady saving record helps your loan application.</p>
     <form method="post" class="form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="create_plan">

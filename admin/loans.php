@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
 $admin = require_staff();
-if (!can('loans') && !can('waivers')) {
+if (!can('loans') && !can('waivers') && !can('collections')) {
     http_response_code(403);
     exit("You don't have access to this page.");
 }
@@ -19,7 +19,7 @@ if (is_post()) {
         if (!$loan) throw new UserError('Loan not found.');
         $uid = (int)$loan['user_id'];
         $note = mb_substr(post('note'), 0, 255);
-        if (!can($action === 'waive' ? 'waivers' : 'loans')) throw new UserError("You don't have permission to do that.");
+        if (!can(['waive' => 'waivers', 'collect_note' => 'collections'][$action] ?? 'loans')) throw new UserError("You don't have permission to do that.");
         $detail = $note;
 
         switch ($action) {
@@ -27,7 +27,19 @@ if (is_post()) {
                 if ($loan['status'] !== 'pending') throw new UserError('Only pending loans can be approved.');
                 $kyc = q_val('SELECT kyc_status FROM users WHERE id = ?', [$uid]);
                 if ($kyc !== 'verified') throw new UserError('Customer is not verified. A physical visit must be completed first.');
-                q('UPDATE loans SET status = "approved", approved_at = NOW(), admin_note = ? WHERE id = ?', [$note ?: null, $lid]);
+                $dual = setting('dual_approval_amount');
+                if ($dual > 0 && (float)$loan['amount'] >= $dual) {
+                    if (!$loan['first_approver_id']) {
+                        q('UPDATE loans SET first_approver_id = ?, admin_note = ? WHERE id = ?', [$admin['id'], $note ?: null, $lid]);
+                        notify_staff('loans', 'Second approval needed', money0($loan['amount']) . ' loan #' . $lid . ' has one approval and needs another staff member.', 'admin/loans.php?id=' . $lid);
+                        $detail = 'first approval' . ($note !== '' ? ' · ' . $note : '');
+                        $msg = 'First approval recorded. Loans of ' . money0($dual) . ' or more need a second approval from another staff member.';
+                        break;
+                    }
+                    if ((int)$loan['first_approver_id'] === (int)$admin['id']) throw new UserError('You gave the first approval. A different staff member must give the second.');
+                    $detail = 'second approval' . ($note !== '' ? ' · ' . $note : '');
+                }
+                q('UPDATE loans SET status = "approved", approved_at = NOW(), admin_note = COALESCE(?, admin_note) WHERE id = ?', [$note ?: null, $lid]);
                 notify($uid, 'Loan approved 🎉', 'Your ' . money0($loan['amount']) . ' loan was approved and will be paid out shortly.', 'loan.php?id=' . $lid, true);
                 $msg = 'Loan approved.';
                 break;
@@ -92,6 +104,21 @@ if (is_post()) {
                 $msg = 'Waiver applied. The customer now owes ' . money($after['payoff']) . '.';
                 break;
 
+            case 'collect_note':
+                $outcome = post('outcome');
+                if (!array_key_exists($outcome, COLLECTION_OUTCOMES)) throw new UserError('Choose what happened.');
+                $promiseDate = post('promise_date') ?: null;
+                $promiseAmount = $promiseDate ? round((float)post('promise_amount'), 2) : null;
+                if ($outcome === 'promised' && (!$promiseDate || $promiseDate < date('Y-m-d') || $promiseAmount <= 0)) throw new UserError('Enter the promised amount and a date from today on.');
+                q('INSERT INTO collection_notes (loan_id, staff_id, outcome, note, promise_date, promise_amount) VALUES (?,?,?,?,?,?)',
+                    [$lid, $admin['id'], $outcome, mb_substr(post('note'), 0, 500), $outcome === 'promised' ? $promiseDate : null, $outcome === 'promised' ? $promiseAmount : null]);
+                if (!$loan['collector_id']) {
+                    q('UPDATE loans SET collector_id = ? WHERE id = ?', [$admin['id'], $lid]);
+                }
+                $detail = COLLECTION_OUTCOMES[$outcome] . ($outcome === 'promised' ? ' ' . money0($promiseAmount) . ' by ' . $promiseDate : '');
+                $msg = 'Contact logged.';
+                break;
+
             case 'default':
                 if ($loan['status'] !== 'active') throw new UserError('Only active loans can be marked as defaulted.');
                 q('UPDATE loans SET status = "defaulted", admin_note = ? WHERE id = ?', [$note ?: 'Marked as defaulted', $lid]);
@@ -126,6 +153,7 @@ if ($id) {
     $txs = q('SELECT * FROM transactions WHERE loan_id = ? ORDER BY id DESC', [$id])->fetchAll();
     $payoutBusy = (bool)q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status = "processing"', [$id]);
     $flwReady = $loan['status'] === 'approved' && flw_payouts_on() && !empty($kyc['bank_code']) && !$payoutBusy;
+    $notes = q('SELECT n.*, u.full_name staff FROM collection_notes n LEFT JOIN users u ON u.id = n.staff_id WHERE n.loan_id = ? ORDER BY n.id DESC', [$id])->fetchAll();
     $waivers = q('SELECT w.*, u.full_name staff FROM loan_waivers w LEFT JOIN users u ON u.id = w.admin_id WHERE w.loan_id = ? ORDER BY w.id DESC', [$id])->fetchAll();
     $dti = $kyc && (float)$kyc['monthly_income'] > 0 ? $s['installment'] / (float)$kyc['monthly_income'] * 100 : null;
 
@@ -156,6 +184,7 @@ if ($id) {
             <dt>Total repayable</dt><dd><?= money($s['total_repayable']) ?> (<?= money($s['installment']) ?> every 30 days)</dd>
             <dt>Purpose</dt><dd><?= e($loan['purpose']) ?></dd>
             <dt>Applied</dt><dd><?= fdatetime($loan['applied_at']) ?></dd>
+            <dt>Agreement</dt><dd><a href="<?= url('agreement.php?id=' . $loan['id']) ?>" target="_blank">View</a><?= $loan['agreement_accepted_at'] ? ' · accepted ' . fdatetime($loan['agreement_accepted_at']) . ' (' . e($loan['agreement_ip']) . ')' : ' · not recorded' ?></dd>
             <?php if ($loan['approved_at']): ?><dt>Approved</dt><dd><?= fdatetime($loan['approved_at']) ?></dd><?php endif; ?>
             <?php if ($loan['disbursed_at']): ?><dt>Paid out</dt><dd><?= fdatetime($loan['disbursed_at']) ?></dd><?php endif; ?>
             <?php if ($loan['admin_note']): ?><dt>Staff note</dt><dd><?= e($loan['admin_note']) ?></dd><?php endif; ?>
@@ -185,6 +214,8 @@ if ($id) {
           <div class="card">
             <h2>Decision</h2>
             <?php if ($loan['kyc_status'] !== 'verified'): ?><div class="alert alert-warn">Customer is not verified. Approval is blocked until the physical visit is complete.</div><?php endif; ?>
+            <?php if ($loan['first_approver_id']): ?><div class="alert alert-info">First approval given by <?= e(q_val('SELECT full_name FROM users WHERE id = ?', [$loan['first_approver_id']]) ?: 'staff') ?>. <?= (int)$loan['first_approver_id'] === (int)$admin['id'] ? 'Another staff member must give the second approval.' : 'Your approval completes it.' ?></div>
+            <?php elseif (setting('dual_approval_amount') > 0 && (float)$loan['amount'] >= setting('dual_approval_amount')): ?><div class="alert alert-info">This loan needs two staff approvals (<?= money0(setting('dual_approval_amount')) ?> or more).</div><?php endif; ?>
             <form method="post" class="form">
               <?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $id ?>">
               <label>Note <span class="hint">Required when rejecting; shown to the customer</span><input name="note" maxlength="255"></label>
@@ -256,6 +287,30 @@ if ($id) {
               <label>Reason <span class="hint">Shown in the audit log</span><input name="note" required maxlength="255" placeholder="e.g. Hospital stay, agreed repayment plan"></label>
               <button class="btn btn-primary" data-confirm="Apply this waiver?">Apply waiver</button>
             </form>
+          </div>
+        <?php endif; ?>
+
+        <?php if (can('collections') && (in_array($loan['status'], ['active', 'defaulted'], true) && $s['late_days'] > 0 || $notes)): ?>
+          <div class="card" id="collect">
+            <h2>Collections</h2>
+            <?php if (in_array($loan['status'], ['active', 'defaulted'], true)): ?>
+              <p class="small muted">Call <a href="tel:<?= e($loan['phone']) ?>"><?= e($loan['phone']) ?></a><?= $kyc ? ' or guarantor ' . e($kyc['guarantor_name']) . ' <a href="tel:' . e($kyc['guarantor_phone']) . '">' . e($kyc['guarantor_phone']) . '</a>' : '' ?>. Contact only these two, 8am–6pm, politely.</p>
+              <form method="post" class="form">
+                <?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $id ?>"><input type="hidden" name="action" value="collect_note">
+                <label>What happened<select name="outcome" data-outcome><?php foreach (COLLECTION_OUTCOMES as $k => $t): ?><option value="<?= $k ?>"><?= e($t) ?></option><?php endforeach; ?></select></label>
+                <div class="form-grid" data-promise>
+                  <label>Promised amount<input type="number" name="promise_amount" step="0.01" min="1" value="<?= $s['payoff'] ?>"></label>
+                  <label>Promised by<input type="date" name="promise_date" min="<?= date('Y-m-d') ?>"></label>
+                </div>
+                <label>Notes<input name="note" maxlength="500" placeholder="e.g. Shop was closed last week; will pay Friday"></label>
+                <button class="btn btn-primary btn-sm">Log contact</button>
+              </form>
+            <?php endif; ?>
+            <?php if ($notes): ?>
+              <ul class="list" style="margin-top:.8rem"><?php foreach ($notes as $n): ?>
+                <li><div class="grow"><div class="title"><?= e(COLLECTION_OUTCOMES[$n['outcome']] ?? label($n['outcome'])) ?><?= $n['promise_date'] ? ' · ' . money0($n['promise_amount']) . ' by ' . fdate($n['promise_date']) : '' ?></div><div class="sub"><?= e($n['note']) ?><?= $n['note'] ? ' · ' : '' ?><?= e($n['staff'] ?? 'Staff') ?> · <?= fdatetime($n['created_at']) ?></div></div></li>
+              <?php endforeach; ?></ul>
+            <?php endif; ?>
           </div>
         <?php endif; ?>
 

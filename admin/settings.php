@@ -20,7 +20,7 @@ if (is_post()) {
     $new = [
         'loan_monthly_rate'   => $num('loan_monthly_rate'),
         'loan_late_fee_rate'  => $num('loan_late_fee_rate'),
-        'savings_daily_rate'  => $num('savings_daily_rate'),
+        'savings_annual_rate' => $num('savings_annual_rate'),
         'min_deposit'         => (int)$num('min_deposit'),
         'min_withdrawal'      => (int)$num('min_withdrawal'),
         'loan_tenures'        => implode(',', $tenures),
@@ -38,6 +38,11 @@ if (is_post()) {
         'limit_silver'        => (int)$num('limit_silver'),
         'limit_gold'          => (int)$num('limit_gold'),
         'limit_platinum'      => (int)$num('limit_platinum'),
+        'dual_approval_amount'=> (int)$num('dual_approval_amount'),
+        'require_staff_2fa'   => (int)(bool)post('require_staff_2fa'),
+        'referral_bonus'      => (int)$num('referral_bonus'),
+        'referral_min_savings'=> (int)$num('referral_min_savings'),
+        'visit_radius_m'      => (int)$num('visit_radius_m'),
         'bank_name'           => mb_substr(post('bank_name'), 0, 80),
         'bank_account_name'   => mb_substr(post('bank_account_name'), 0, 120),
         'bank_account_number' => mb_substr(post('bank_account_number'), 0, 20),
@@ -45,12 +50,15 @@ if (is_post()) {
     $errors = [];
     if ($new['loan_monthly_rate'] <= 0 || $new['loan_monthly_rate'] > 100) $errors[] = 'Loan interest must be between 0 and 100% per 30 days.';
     if ($new['loan_late_fee_rate'] < 0 || $new['loan_late_fee_rate'] > 10) $errors[] = 'Late penalty must be between 0 and 10% per day.';
-    if ($new['savings_daily_rate'] < 0 || $new['savings_daily_rate'] > 5) $errors[] = 'Savings interest must be between 0 and 5% per day.';
+    if ($new['savings_annual_rate'] < 0 || $new['savings_annual_rate'] > 50) $errors[] = 'Savings interest must be between 0 and 50% a year.';
     if ($new['auto_payout_daily_limit'] < 0) $errors[] = 'The instant withdrawal limit cannot be negative (use 0 for no limit).';
     $levels = [$new['limit_starter'], $new['limit_bronze'], $new['limit_silver'], $new['limit_gold'], $new['limit_platinum']];
     $sorted = $levels;
     sort($sorted);
     if (min($levels) < 0 || $sorted !== $levels) $errors[] = 'Level limits must not be negative and must go up from Starter to Platinum.';
+    if ($new['dual_approval_amount'] < 0 || $new['referral_bonus'] < 0 || $new['referral_min_savings'] < 0) $errors[] = 'Amounts cannot be negative.';
+    if ($new['visit_radius_m'] < 50) $errors[] = 'Visit check-in distance must be at least 50 m.';
+    if ($new['require_staff_2fa'] && !current_user()['totp_enabled']) $errors[] = 'Turn on two-step sign-in for yourself first (Sign-in security), so you do not lock yourself out.';
     if ($new['min_deposit'] < 1 || $new['min_withdrawal'] < 1) $errors[] = 'Minimum deposit and withdrawal must be at least 1.';
     if (!$tenures) $errors[] = 'Allow at least one loan term.';
     if (!$new['manual_deposits'] && !($new['flw_deposits'] && flw_configured())) $errors[] = 'Keep at least one way for customers to pay in.';
@@ -59,7 +67,7 @@ if (is_post()) {
     if ($errors) {
         foreach ($errors as $er) flash('error', $er);
     } else {
-        if ((float)setting('savings_daily_rate') !== $new['savings_daily_rate']) {
+        if ((float)setting('savings_annual_rate') !== $new['savings_annual_rate']) {
             // Settle every plan at the old rate first, so the new one only counts from today.
             foreach (q('SELECT id FROM savings_plans WHERE status <> "closed" AND balance > 0')->fetchAll() as $p) {
                 accrue_plan_interest((int)$p['id']);
@@ -110,11 +118,11 @@ app_header('Settings', 'settings', 'admin');
       <h2>Savings</h2>
       <div class="form">
         <div class="form-grid">
-          <label>Interest % per day<input type="number" name="savings_daily_rate" step="0.001" min="0" required value="<?= setting('savings_daily_rate') ?>"></label>
+          <label>Interest % a year <span class="hint">Earned daily</span><input type="number" name="savings_annual_rate" step="0.1" min="0" max="50" required value="<?= setting('savings_annual_rate') ?>"></label>
           <label>Minimum deposit<input type="number" name="min_deposit" min="1" required value="<?= setting('min_deposit') ?>"></label>
           <label>Minimum withdrawal<input type="number" name="min_withdrawal" min="1" required value="<?= setting('min_withdrawal') ?>"></label>
         </div>
-        <p class="muted small" style="margin:0">At <?= setting('savings_daily_rate') ?>% a day, credited daily, ₦10,000 grows to <?= money(10000 * (1 + setting('savings_daily_rate') / 100) ** 365) ?> in a year.</p>
+        <p class="muted small" style="margin:0">At <?= setting('savings_annual_rate') ?>% a year (<?= round(savings_daily_rate(), 4) ?>% a day), ₦10,000 kept for a year grows to <?= money(10000 * (1 + savings_daily_rate() / 100) ** 365) ?>. For comparison, flexible savings on PiggyVest and Cowrywise pay roughly 10–15% a year.</p>
       </div>
     </div>
 
@@ -145,6 +153,27 @@ app_header('Settings', 'settings', 'admin');
         </div>
         <label class="check"><input type="checkbox" name="auto_approve_repeat" value="1" <?= $on('auto_approve_repeat') ?>><span class="small"><strong>Instant approval</strong> for customers whose last loan was repaid on time (within their limit)</span></label>
         <label class="check"><input type="checkbox" name="auto_disburse" value="1" <?= $on('auto_disburse') ?>><span class="small">Pay instantly approved loans straight to the customer's bank through Flutterwave</span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Staff security &amp; checks</h2>
+      <div class="form">
+        <label>Two staff approvals for loans of<input type="number" name="dual_approval_amount" min="0" step="10000" value="<?= setting('dual_approval_amount') ?>"><span class="hint">0 = one approval is enough. Instant approval never applies at this size.</span></label>
+        <label class="check"><input type="checkbox" name="require_staff_2fa" value="1" <?= $on('require_staff_2fa') ?>><span class="small">All staff must sign in with an authenticator app (two-step sign-in)</span></label>
+        <label>Flag home-visit check-ins further than (metres)<input type="number" name="visit_radius_m" min="50" step="50" value="<?= setting('visit_radius_m') ?>"></label>
+        <p class="small muted" style="margin:0">BVN checks: <?= dojah_on() ? '<strong>on</strong> through Dojah' . (str_contains(DOJAH_BASE_URL, 'sandbox') ? ' (sandbox, test data only)' : '') : 'off. Add <code>DOJAH_APP_ID</code> and <code>DOJAH_SECRET_KEY</code> to check every BVN before a visit is booked' ?>.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Referrals</h2>
+      <div class="form">
+        <div class="form-grid">
+          <label>Bonus to the inviter<input type="number" name="referral_bonus" min="0" step="100" value="<?= setting('referral_bonus') ?>"><span class="hint">0 = referrals off</span></label>
+          <label>Paid once the friend has saved<input type="number" name="referral_min_savings" min="0" step="500" value="<?= setting('referral_min_savings') ?>"></label>
+        </div>
+        <p class="small muted" style="margin:0"><?= (int)q_val('SELECT COUNT(*) FROM referrals') ?> referrals so far · <?= money0(q_val('SELECT COALESCE(SUM(amount),0) FROM referrals WHERE status = "rewarded"')) ?> paid in bonuses.</p>
       </div>
     </div>
 

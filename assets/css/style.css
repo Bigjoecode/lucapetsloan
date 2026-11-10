@@ -271,3 +271,4 @@ dialog::backdrop { background: rgba(10, 30, 22, .45); }
 .credit-card .lvl.on { background: var(--accent, #e0b45a); }
 
 [hidden] { display: none !important; }
+.section-title { font-size: 1rem; margin: 1.4rem 0 .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

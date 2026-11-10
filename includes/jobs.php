@@ -51,7 +51,7 @@ function auto_charge_failed(string $table, array $row, string $what): void
 function run_daily_jobs(int $budgetSeconds = 50): array
 {
     $stop = time() + $budgetSeconds;
-    $out = ['auto_save' => 0, 'auto_repay' => 0, 'failed' => 0, 'reminders' => 0, 'transfers_checked' => 0, 'payments_checked' => 0, 'expired' => 0];
+    $out = ['auto_save' => 0, 'auto_repay' => 0, 'ajo_paid' => 0, 'failed' => 0, 'reminders' => 0, 'transfers_checked' => 0, 'payments_checked' => 0, 'expired' => 0];
     $today = date('Y-m-d');
 
     if (flw_deposits_on()) {
@@ -90,6 +90,21 @@ function run_daily_jobs(int $budgetSeconds = 50): array
             } else {
                 q('UPDATE loans SET auto_fails = 0 WHERE id = ?', [$l['id']]);
                 $out['auto_repay']++;
+            }
+        }
+    }
+
+    // 2b. Group savings: on the due date, take unpaid contributions from members' savings.
+    foreach (q('SELECT * FROM ajo_groups WHERE status = "active" AND round_due <= CURDATE()')->fetchAll() as $g) {
+        if (time() > $stop) break;
+        $unpaid = q('SELECT m.user_id FROM ajo_members m WHERE m.group_id = ? AND NOT EXISTS (SELECT 1 FROM ajo_contributions c WHERE c.group_id = m.group_id AND c.user_id = m.user_id AND c.round = ?)', [$g['id'], $g['current_round']])->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($unpaid as $memberId) {
+            try {
+                ajo_contribute((int)$g['id'], (int)$memberId);
+                $out['ajo_paid']++;
+            } catch (UserError) {
+                $out['reminders'] += (int)remind((int)$memberId, 'ajo_due', $g['id'] . '-' . $g['current_round'] . '-' . $memberId . '-' . $today, 'Group savings payment due',
+                    'Your ' . money0($g['contribution']) . ' for "' . $g['name'] . '" round ' . $g['current_round'] . ' is due. Add money to your savings so the group can pay out.', 'ajo.php?id=' . $g['id']);
             }
         }
     }

@@ -30,12 +30,14 @@ if (is_post()) {
         if (mb_strlen($purpose) < 5) throw new UserError('Tell us briefly what the loan is for.');
         if (!post('agree')) throw new UserError('Please accept the loan terms.');
 
-        q('INSERT INTO loans (user_id, product_id, amount, interest_rate, late_fee_rate, tenure_months, purpose, auto_repay, auto_card_id) VALUES (?,?,?,?,?,?,?,?,?)',
-            [$uid, $p['id'], $amount, setting('loan_monthly_rate'), setting('loan_late_fee_rate'), $tenure, $purpose, (int)(bool)$cardId, $cardId ?: null]);
+        q('INSERT INTO loans (user_id, product_id, amount, interest_rate, late_fee_rate, tenure_months, purpose, auto_repay, auto_card_id, agreement_accepted_at, agreement_ip) VALUES (?,?,?,?,?,?,?,?,?,NOW(),?)',
+            [$uid, $p['id'], $amount, setting('loan_monthly_rate'), setting('loan_late_fee_rate'), $tenure, $purpose, (int)(bool)$cardId, $cardId ?: null,
+             mb_substr((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
         $id = (int)db()->lastInsertId();
 
         // Repeat customers who paid their last loan on time don't wait for a person.
-        if (setting('auto_approve_repeat') && $credit['trusted']) {
+        $dual = setting('dual_approval_amount');
+        if (setting('auto_approve_repeat') && $credit['trusted'] && !($dual > 0 && $amount >= $dual)) {
             q('UPDATE loans SET status = "approved", approved_at = NOW(), auto_approved = 1, admin_note = ? WHERE id = ?', ['Approved instantly · ' . $credit['name'] . ' level', $id]);
             audit('loan.auto_approve', 'Loan #' . $id, money0($amount) . ' for ' . $u['full_name'] . ' (' . $credit['name'] . ', ' . $credit['on_time'] . ' on-time)', null);
             $sent = false;
@@ -126,7 +128,7 @@ app_header('Loans', 'loans');
             <select name="auto_card_id"><option value="0">No, I'll pay myself</option><?php foreach ($cards as $c): ?><option value="<?= $c['id'] ?>" selected><?= e(($c['brand'] ?: 'Card') . ' •••• ' . $c['last4']) ?></option><?php endforeach; ?></select>
           </label>
         <?php endif; ?>
-        <label class="check"><input type="checkbox" name="agree" value="1"><span class="small">I understand interest of <?= setting('loan_monthly_rate') ?>% per 30 days builds up daily from the day the loan is paid to me, and a penalty of <?= setting('loan_late_fee_rate') ?>% of the unpaid balance is added every day after the due date.</span></label>
+        <label class="check"><input type="checkbox" name="agree" value="1"><span class="small">I have read and accept the <a href="<?= url('agreement.php') ?>" target="_blank" data-agreement-link>loan agreement and key facts</a>: interest of <?= setting('loan_monthly_rate') ?>% per 30 days builds up daily from the day the loan is paid to me, and a penalty of <?= setting('loan_late_fee_rate') ?>% of the unpaid balance is added every day after the due date.</span></label>
         <button class="btn btn-primary">Submit application</button>
       </form>
       <div class="calc-out" id="loan-calc">

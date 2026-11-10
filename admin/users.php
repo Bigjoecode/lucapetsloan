@@ -74,6 +74,7 @@ app_header('Customers', 'users', 'admin');
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end">
               <?= csrf_field() ?><input type="hidden" name="user_id" value="<?= $r['id'] ?>">
               <button class="btn btn-ghost btn-sm" name="action" value="toggle_status" data-confirm="<?= $r['status'] === 'active' ? 'Suspend' : 'Reactivate' ?> this account?"><?= $r['status'] === 'active' ? 'Suspend' : 'Activate' ?></button>
+              <a class="btn btn-ghost btn-sm" href="<?= url('statement.php?user=' . $r['id']) ?>" target="_blank">Statement</a>
               <button class="btn btn-ghost btn-sm" name="action" value="reset_link" data-confirm="Create a password reset link for this customer? Only send it after confirming it's really them.">Reset link</button>
             </form>
             <?php endif; ?>

@@ -15,6 +15,10 @@ return [
   pin_fails TINYINT UNSIGNED NOT NULL DEFAULT 0,
   pin_locked_until DATETIME NULL,
   credit_limit_override DECIMAL(14,2) NULL COMMENT 'set by staff; replaces the level-based limit',
+  totp_secret VARCHAR(64) NULL COMMENT 'staff two-step login',
+  totp_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  referral_code VARCHAR(12) NULL UNIQUE,
+  referred_by INT UNSIGNED NULL,
   kyc_status ENUM('none','submitted','visit_scheduled','verified','rejected') NOT NULL DEFAULT 'none',
   status ENUM('active','suspended') NOT NULL DEFAULT 'active',
   last_login_at DATETIME NULL,
@@ -47,6 +51,14 @@ return [
   account_number VARCHAR(20) NOT NULL,
   account_name VARCHAR(120) NOT NULL,
   bank_code VARCHAR(20) NULL,
+  bvn_check VARCHAR(20) NULL COMMENT 'match / partial / no_match / error',
+  bvn_check_details VARCHAR(255) NULL,
+  officer_id INT UNSIGNED NULL,
+  checkin_at DATETIME NULL,
+  checkin_lat DECIMAL(10,7) NULL,
+  checkin_lng DECIMAL(10,7) NULL,
+  checkin_distance_m INT UNSIGNED NULL,
+  visit_photo VARCHAR(80) NULL,
   nok_name VARCHAR(120) NOT NULL,
   nok_phone VARCHAR(30) NOT NULL,
   nok_relationship VARCHAR(40) NOT NULL,
@@ -139,6 +151,10 @@ return [
   auto_card_id INT UNSIGNED NULL,
   auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0,
   auto_approved TINYINT(1) NOT NULL DEFAULT 0,
+  first_approver_id INT UNSIGNED NULL COMMENT 'large loans need two different staff',
+  collector_id INT UNSIGNED NULL,
+  agreement_accepted_at DATETIME NULL,
+  agreement_ip VARCHAR(45) NULL,
   INDEX (user_id), INDEX (status),
   CONSTRAINT fk_loan_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_loan_product FOREIGN KEY (product_id) REFERENCES loan_products(id)
@@ -147,7 +163,7 @@ return [
 "CREATE TABLE IF NOT EXISTS transactions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL,
-  type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest') NOT NULL,
+  type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest','bonus','ajo_contribution','ajo_payout') NOT NULL,
   amount DECIMAL(14,2) NOT NULL,
   method VARCHAR(30) NOT NULL,
   reference VARCHAR(80) NULL,
@@ -242,6 +258,71 @@ return [
   status VARCHAR(20) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (user_id), INDEX (kind, ref)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS collection_notes (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  loan_id INT UNSIGNED NOT NULL,
+  staff_id INT UNSIGNED NOT NULL,
+  outcome VARCHAR(30) NOT NULL,
+  note VARCHAR(500) NOT NULL DEFAULT '',
+  promise_date DATE NULL,
+  promise_amount DECIMAL(14,2) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (loan_id),
+  CONSTRAINT fk_cnote_loan FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS referrals (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  referrer_id INT UNSIGNED NOT NULL,
+  referee_id INT UNSIGNED NOT NULL UNIQUE,
+  status ENUM('pending','rewarded') NOT NULL DEFAULT 'pending',
+  amount DECIMAL(14,2) NULL,
+  rewarded_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (referrer_id),
+  CONSTRAINT fk_ref_referrer FOREIGN KEY (referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ref_referee FOREIGN KEY (referee_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS ajo_groups (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  owner_id INT UNSIGNED NOT NULL,
+  contribution DECIMAL(14,2) NOT NULL,
+  frequency ENUM('daily','weekly','monthly') NOT NULL,
+  size TINYINT UNSIGNED NOT NULL,
+  invite_code VARCHAR(10) NOT NULL UNIQUE,
+  status ENUM('forming','active','completed','cancelled') NOT NULL DEFAULT 'forming',
+  current_round TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  round_due DATE NULL,
+  started_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ajo_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS ajo_members (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  group_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  position TINYINT UNSIGNED NULL COMMENT 'round in which this member collects the pot',
+  paid_out_at DATETIME NULL,
+  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ajo_member (group_id, user_id),
+  CONSTRAINT fk_ajom_group FOREIGN KEY (group_id) REFERENCES ajo_groups(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ajom_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS ajo_contributions (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  group_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  round TINYINT UNSIGNED NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ajo_round (group_id, user_id, round),
+  CONSTRAINT fk_ajoc_group FOREIGN KEY (group_id) REFERENCES ajo_groups(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
 SESSIONS_TABLE_SQL,

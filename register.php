@@ -4,6 +4,10 @@ require __DIR__ . '/includes/bootstrap.php';
 if (current_user()) {
     redirect('dashboard.php');
 }
+// Invite links look like register.php?ref=LPABC123; remember the code until they sign up.
+if (!empty($_GET['ref'])) {
+    $_SESSION['ref'] = mb_substr(preg_replace('/[^A-Za-z0-9]/', '', (string)$_GET['ref']), 0, 12);
+}
 
 $errors = [];
 if (is_post()) {
@@ -26,6 +30,11 @@ if (is_post()) {
     if (!$errors) {
         q('INSERT INTO users (full_name, email, phone, password_hash) VALUES (?,?,?,?)', [$name, $email, $phone, password_hash($pass, PASSWORD_DEFAULT)]);
         $id = (int)db()->lastInsertId();
+        $refCode = post('ref') ?: ($_SESSION['ref'] ?? '');
+        if ($refCode !== '') {
+            record_referral($id, $refCode);
+            unset($_SESSION['ref']);
+        }
         q('INSERT INTO savings_plans (user_id, name, daily_amount) VALUES (?, "Daily Savings", 500)', [$id]);
         notify($id, 'Welcome to ' . APP_NAME . '!', 'Start saving daily, then complete your verification to unlock loans.', 'verification.php');
         login_user(['id' => $id]);
@@ -48,6 +57,7 @@ public_header('Create account');
       <label>Email<input type="email" name="email" required autocomplete="email" value="<?= e(post('email')) ?>"></label>
       <label>Password<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
       <label>Confirm password<input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+      <label>Invite code <span class="hint">Optional</span><input name="ref" maxlength="12" value="<?= e(post('ref') ?: ($_SESSION['ref'] ?? '')) ?>" style="text-transform:uppercase"></label>
       <label class="check"><input type="checkbox" name="terms" value="1" <?= post('terms') ? 'checked' : '' ?>><span class="small">I agree that <?= e(APP_NAME) ?> may verify my identity and visit my address before approving a loan.</span></label>
       <button class="btn btn-primary btn-block">Create account</button>
     </form>

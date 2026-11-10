@@ -3,7 +3,7 @@ require __DIR__ . '/includes/bootstrap.php';
 $u = require_login();
 accrue_user_interest((int)$u['id']);
 
-$types = ['' => 'All', 'deposit' => 'Deposits', 'withdrawal' => 'Withdrawals', 'loan_disbursement' => 'Loans paid out', 'loan_repayment' => 'Repayments', 'interest' => 'Interest'];
+$types = ['' => 'All', 'deposit' => 'Deposits', 'withdrawal' => 'Withdrawals', 'loan_disbursement' => 'Loans paid out', 'loan_repayment' => 'Repayments', 'interest' => 'Interest', 'bonus' => 'Bonuses', 'ajo_contribution' => 'Group savings'];
 $type = array_key_exists($_GET['type'] ?? '', $types) ? ($_GET['type'] ?? '') : '';
 $page = max(1, (int)($_GET['page'] ?? 1));
 $per = 25;
@@ -27,6 +27,14 @@ $sum = q('SELECT
 app_header('Activity', 'transactions');
 ?>
 <h1 class="mobile-title">Activity</h1>
+<form class="card row between" method="get" action="<?= url('statement.php') ?>" target="_blank">
+  <div><h2 style="margin:0">Account statement</h2><span class="muted small">Download a PDF of your savings and loans for any dates.</span></div>
+  <div class="row">
+    <input type="date" name="from" value="<?= date('Y-m-d', strtotime('-29 days')) ?>" style="width:auto" required>
+    <input type="date" name="to" value="<?= date('Y-m-d') ?>" style="width:auto" required>
+    <button class="btn btn-primary btn-sm"><?= icon('doc', 16) ?> Get statement</button>
+  </div>
+</form>
 <div class="grid grid-4">
   <div class="card stat"><span class="k">Total deposited</span><span class="v"><?= money($sum['dep']) ?></span></div>
   <div class="card stat"><span class="k">Total withdrawn</span><span class="v"><?= money($sum['wd']) ?></span></div>

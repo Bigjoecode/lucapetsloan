@@ -42,7 +42,7 @@ const SETTING_DEFAULTS = [
     'loan_monthly_rate'    => 19.8,     // percent per 30 days
     'loan_late_fee_rate'   => 2.0,      // percent of the unpaid balance per day after the due date
     'loan_tenures'         => '1,2',    // allowed terms in 30-day months: 30 or 60 days
-    'savings_daily_rate'   => 0.2,      // percent per day, credited to each plan daily
+    'savings_annual_rate'  => 12.0,     // percent a year, earned daily (like PiggyVest/Cowrywise flexible savings)
     'min_deposit'          => 100,
     'min_withdrawal'       => 500,
     'manual_deposits'      => 1,        // customers may pay by bank transfer and enter a reference
@@ -61,6 +61,11 @@ const SETTING_DEFAULTS = [
     'limit_gold'           => 250000,
     'limit_platinum'       => 500000,
     'last_cron_run'        => '',       // written by the daily job
+    'dual_approval_amount' => 200000,   // loans this size or bigger need two staff approvals (0 = off)
+    'require_staff_2fa'    => 0,        // staff must use an authenticator app to sign in
+    'referral_bonus'       => 500,      // paid into the inviter's savings (0 = off)
+    'referral_min_savings' => 5000,     // once the invited friend has saved this much
+    'visit_radius_m'       => 300,      // check-ins further than this from the address are flagged
     'bank_name'            => 'Your Bank Plc',
     'bank_account_name'    => 'LucaPet Loan Ltd',
     'bank_account_number'  => '0123456789',
@@ -82,6 +87,11 @@ define('TERMII_API_KEY', env('TERMII_API_KEY', ''));
 define('TERMII_SENDER_ID', env('TERMII_SENDER_ID', 'LucaPet'));
 define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
 define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
+
+// BVN checks through Dojah (dojah.io). Use https://sandbox.dojah.io while testing.
+define('DOJAH_APP_ID', env('DOJAH_APP_ID', ''));
+define('DOJAH_SECRET_KEY', env('DOJAH_SECRET_KEY', ''));
+define('DOJAH_BASE_URL', rtrim(env('DOJAH_BASE_URL', 'https://api.dojah.io'), '/'));
 
 // Daily scheduled job (/cron.php). Vercel sends "Authorization: Bearer <CRON_SECRET>".
 define('CRON_SECRET', env('CRON_SECRET', ''));

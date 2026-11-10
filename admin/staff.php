@@ -49,6 +49,10 @@ if (is_post()) {
                 q('UPDATE users SET role = "customer", permissions = NULL WHERE id = ?', [$uid]);
                 audit('staff.remove', 'User #' . $uid, $user['full_name']);
                 flash('success', $user['full_name'] . ' no longer has staff access.');
+            } elseif ($action === 'reset_2fa') {
+                q('UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?', [$uid]);
+                audit('staff.2fa_reset', 'User #' . $uid, $user['full_name']);
+                flash('success', 'Two-step sign-in reset for ' . $user['full_name'] . '. They can set it up again under Sign-in security.');
             } elseif ($action === 'toggle_status') {
                 q('UPDATE users SET status = IF(status = "active", "suspended", "active") WHERE id = ?', [$uid]);
                 audit($user['status'] === 'active' ? 'staff.suspend' : 'staff.activate', 'User #' . $uid, $user['full_name']);
@@ -92,7 +96,7 @@ app_header('Staff & roles', 'staff', 'admin');
         <span class="avatar"><?= e(initials($s['full_name'])) ?></span>
         <div class="grow" style="min-width:220px">
           <div class="title"><?= e($s['full_name']) ?> <span class="badge badge-<?= is_super($s) ? 'ok' : 'info' ?>"><?= e(label($s['role'])) ?></span> <?= $s['status'] === 'suspended' ? badge('suspended') : '' ?></div>
-          <div class="sub"><?= e($s['email']) ?> · <?= e($s['phone']) ?> · last action <?= $s['last_action'] ? fdatetime($s['last_action']) : 'never' ?></div>
+          <div class="sub"><?= e($s['email']) ?> · <?= e($s['phone']) ?> · <?= $s['totp_enabled'] ? 'two-step on' : 'two-step off' ?> · last action <?= $s['last_action'] ? fdatetime($s['last_action']) : 'never' ?></div>
           <?php if ((int)$s['id'] === (int)$me['id']): ?>
             <div class="sub">That's you.</div>
           <?php else: ?>
@@ -105,6 +109,7 @@ app_header('Staff & roles', 'staff', 'admin');
                 <div class="row">
                   <button class="btn btn-primary btn-sm" name="action" value="update">Save</button>
                   <button class="btn btn-ghost btn-sm" name="action" value="toggle_status" data-confirm="<?= $s['status'] === 'active' ? 'Suspend' : 'Reactivate' ?> this staff account?"><?= $s['status'] === 'active' ? 'Suspend' : 'Reactivate' ?></button>
+                  <?php if ($s['totp_enabled']): ?><button class="btn btn-ghost btn-sm" name="action" value="reset_2fa" data-confirm="Reset two-step sign-in for this person (e.g. lost phone)?">Reset two-step</button><?php endif; ?>
                   <button class="btn btn-danger btn-sm" name="action" value="remove" data-confirm="Remove all staff access for <?= e($s['full_name']) ?>?">Remove staff access</button>
                 </div>
               </form>

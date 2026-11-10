@@ -59,6 +59,26 @@
     sel.addEventListener('change', sync); sync();
   });
 
+  // Collections: only ask for the promise when the customer promised to pay
+  document.querySelectorAll('select[data-outcome]').forEach((sel) => {
+    const box = sel.form.querySelector('[data-promise]');
+    const sync = () => { if (box) box.hidden = sel.value !== 'promised'; };
+    sel.addEventListener('change', sync); sync();
+  });
+
+  // Field officer check-in: fill in the phone's location, then submit
+  document.querySelectorAll('form[data-checkin]').forEach((f) => f.addEventListener('submit', (e) => {
+    if (f.lat.value) return;
+    e.preventDefault();
+    if (!navigator.geolocation) { alert('This phone cannot share its location.'); return; }
+    const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Getting location…';
+    navigator.geolocation.getCurrentPosition(
+      (p) => { f.lat.value = p.coords.latitude; f.lng.value = p.coords.longitude; f.submit(); },
+      () => { btn.disabled = false; btn.textContent = 'Check in here'; alert('Allow location access to check in.'); },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }));
+
   // Confirm dangerous actions
   document.querySelectorAll('[data-confirm]').forEach((el) =>
     el.addEventListener('click', (e) => { if (!confirm(el.dataset.confirm)) e.preventDefault(); })
@@ -97,10 +117,13 @@
       out.querySelector('[data-o=total]').textContent = fmt(total);
       out.querySelector('[data-o=monthly]').textContent = fmt(total / n);
     }
-    product.addEventListener('change', () => { syncLimits(); calc(); });
+    const agreement = form.querySelector('[data-agreement-link]');
+    const syncLink = () => { if (agreement) agreement.href = agreement.href.split('?')[0] + '?amount=' + encodeURIComponent(amount.value) + '&tenure=' + encodeURIComponent(tenure.value); };
+    amount.addEventListener('input', syncLink); tenure.addEventListener('change', syncLink);
+    product.addEventListener('change', () => { syncLimits(); calc(); syncLink(); });
     amount.addEventListener('input', calc);
     tenure.addEventListener('change', calc);
-    syncLimits(); calc();
+    syncLimits(); calc(); syncLink();
   });
 
   // Shrink photos in the browser before upload (keeps requests small and saves mobile data)

@@ -22,6 +22,12 @@ if (is_post()) {
                 $error = 'This account is suspended. Please contact support.';
             } else {
                 unset($_SESSION['login_fails']);
+                if (is_staff($user) && $user['totp_enabled']) {
+                    session_regenerate_id(true);
+                    $_SESSION['2fa_uid'] = (int)$user['id'];
+                    $_SESSION['2fa_at'] = time();
+                    redirect('login_2fa.php');
+                }
                 login_user($user);
                 redirect(home_for($user));
             }

@@ -5,6 +5,8 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/flutterwave.php';
 require_once __DIR__ . '/messaging.php';
+require_once __DIR__ . '/community.php';
+require_once __DIR__ . '/identity.php';
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/layout.php';
 

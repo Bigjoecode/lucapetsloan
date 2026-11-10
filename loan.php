@@ -140,6 +140,7 @@ app_header('Loan #' . $loan['id'], 'loans');
       <dt>Late penalty</dt><dd><?= (float)$loan['late_fee_rate'] ?>% of unpaid balance per day<?= $s['penalty'] > 0 ? ' · now ' . money($s['penalty']) : '' ?><?= $s['penalty_waived'] > 0 ? ' · ' . money($s['penalty_waived']) . ' waived' : '' ?><?= $s['penalty_stopped'] ? ' · stopped' : '' ?></dd>
       <dt>Purpose</dt><dd><?= e($loan['purpose']) ?></dd>
       <dt>Applied</dt><dd><?= fdatetime($loan['applied_at']) ?></dd>
+      <dt>Agreement</dt><dd><a href="<?= url('agreement.php?id=' . $loan['id']) ?>" target="_blank">View or download</a><?= $loan['agreement_accepted_at'] ? ' · accepted ' . fdatetime($loan['agreement_accepted_at']) : '' ?></dd>
     </dl>
   </div>
 

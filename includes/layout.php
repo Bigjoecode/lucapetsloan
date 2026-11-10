@@ -15,6 +15,8 @@ function icon(string $name, int $size = 20): string
         'logout'  => '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M10 17l-5-5 5-5M5 12h11"/>',
         'chart'   => '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/>',
         'cash'    => '<path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+        'phone'   => '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>',
+        'gift'    => '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v9H5v-9M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
         'map'     => '<path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12Z"/><circle cx="12" cy="9" r="2.5"/>',
         'check'   => '<path d="m5 12 5 5L20 7"/>',
         'x'       => '<path d="M6 6l12 12M18 6 6 18"/>',
@@ -40,16 +42,19 @@ function brand_mark(): string
 /** One transaction as a list item. */
 function tx_row(array $t, bool $showUser = false): string
 {
-    $in = in_array($t['type'], ['deposit', 'loan_disbursement', 'interest'], true);
+    $in = in_array($t['type'], ['deposit', 'loan_disbursement', 'interest', 'bonus', 'ajo_payout'], true);
     [$cls, $ic] = match ($t['type']) {
         'deposit'           => ['tx-in', 'down'],
         'interest'          => ['tx-in', 'chart'],
+        'bonus'             => ['tx-in', 'gift'],
+        'ajo_payout'        => ['tx-in', 'users'],
+        'ajo_contribution'  => ['tx-out', 'users'],
         'withdrawal'        => ['tx-out', 'up'],
         'loan_disbursement' => ['tx-loan', 'loan'],
         default             => ['tx-loan', 'check'],
     };
-    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment', 'interest' => 'Savings interest'];
-    $sub = fdatetime($t['created_at']) . ' · ' . ($t['type'] === 'interest' ? ($t['note'] ?? '') : (payment_methods()[$t['method']] ?? label($t['method'])));
+    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment', 'interest' => 'Savings interest', 'bonus' => 'Referral bonus', 'ajo_contribution' => 'Group savings contribution', 'ajo_payout' => 'Group savings pot'];
+    $sub = fdatetime($t['created_at']) . ' · ' . (in_array($t['type'], ['interest', 'bonus', 'ajo_contribution', 'ajo_payout'], true) ? ($t['note'] ?? '') : (payment_methods()[$t['method']] ?? label($t['method'])));
     if ($showUser && isset($t['full_name'])) {
         $sub = e($t['full_name']) . ' · ' . $sub;
     } else {
@@ -111,7 +116,7 @@ function html_head(string $title, array $extraCss = []): void
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=3">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=4">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>
@@ -151,7 +156,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=6"></script>
 </body>
 </html>
 <?php
@@ -166,10 +171,14 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
         $nav = array_filter([
             'dashboard' => ['admin/index.php', 'Overview', 'chart'],
             'kyc'       => can('kyc') ? ['admin/kyc.php', 'Verifications', 'shield'] : null,
-            'loans'     => can('loans') || can('waivers') ? ['admin/loans.php', 'Loans', 'loan'] : null,
+            'loans'     => can('loans') || can('waivers') || can('collections') ? ['admin/loans.php', 'Loans', 'loan'] : null,
+            'collections' => can('collections') ? ['admin/collections.php', 'Collections', 'phone'] : null,
+            'visits'    => can('visits') ? ['admin/visits.php', 'Home visits', 'map'] : null,
             'payments'  => can('payments') ? ['admin/payments.php', 'Payments', 'cash'] : null,
             'users'     => can('customers') ? ['admin/users.php', 'Customers', 'users'] : null,
             'products'  => can('products') ? ['admin/products.php', 'Loan products', 'cog'] : null,
+            'reports'   => can('reports') ? ['admin/reports.php', 'Reports', 'chart'] : null,
+            'ajo'       => can('customers') ? ['admin/ajo.php', 'Group savings', 'users'] : null,
             'staff'     => is_super($u) ? ['admin/staff.php', 'Staff & roles', 'shield'] : null,
             'settings'  => is_super($u) ? ['admin/settings.php', 'Settings', 'cog'] : null,
             'audit'     => is_super($u) ? ['admin/audit.php', 'Audit log', 'list'] : null,
@@ -180,6 +189,7 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
             'dashboard'    => ['dashboard.php', 'Home', 'home'],
             'savings'      => ['savings.php', 'Savings', 'piggy'],
             'loans'        => ['loans.php', 'Loans', 'loan'],
+            'ajo'          => ['ajo.php', 'Group savings', 'users'],
             'verification' => ['verification.php', 'Verification', 'shield'],
             'transactions' => ['transactions.php', 'Activity', 'list'],
             'profile'      => ['profile.php', 'Profile', 'user'],
@@ -199,6 +209,9 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
       <?php endforeach; ?>
     </nav>
     <div class="side-foot">
+      <?php if (is_staff($u) && $area === 'admin'): ?>
+        <a href="<?= url('admin/security.php') ?>"><?= icon('shield') ?><span>Sign-in security</span></a>
+      <?php endif; ?>
       <?php if (is_staff($u)): ?>
         <a href="<?= url($area === 'admin' ? 'dashboard.php' : 'admin/index.php') ?>" class="side-switch"><?= icon('arrow', 16) ?><?= $area === 'admin' ? 'Customer view' : 'Staff console' ?></a>
       <?php endif; ?>
@@ -236,7 +249,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=6"></script>
 </body>
 </html>
 <?php

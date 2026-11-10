@@ -1,6 +1,10 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-$admin = require_staff('kyc');
+$admin = require_staff();
+if (!can('kyc') && !can('visits')) {
+    http_response_code(403);
+    exit("You don't have access to this page.");
+}
 
 $id = (int)($_GET['id'] ?? 0);
 
@@ -28,15 +32,61 @@ if (is_post()) {
         redirect('admin/kyc.php?id=' . $uid);
     }
 
+    if ($action === 'checkin' || $action === 'visit_photo') {
+        if (!can('visits')) {
+            flash('error', 'Only field officers can check in.');
+            redirect('admin/kyc.php?id=' . $uid);
+        }
+        if ($action === 'checkin') {
+            $lat = (float)post('lat');
+            $lng = (float)post('lng');
+            if (!$lat && !$lng) {
+                flash('error', 'Your location could not be read. Allow location access and try again.');
+            } else {
+                $dist = ($k['latitude'] !== null && $k['longitude'] !== null) ? distance_m($lat, $lng, (float)$k['latitude'], (float)$k['longitude']) : null;
+                q('UPDATE kyc SET checkin_at = NOW(), checkin_lat = ?, checkin_lng = ?, checkin_distance_m = ? WHERE user_id = ?', [$lat, $lng, $dist, $uid]);
+                audit('kyc.checkin', 'User #' . $uid, $dist === null ? 'no saved location to compare' : $dist . ' m from the address');
+                $far = $dist !== null && $dist > setting('visit_radius_m');
+                flash($far ? 'error' : 'success', $dist === null ? 'Checked in. The customer did not share a map location, so distance could not be checked.'
+                    : ($far ? 'Checked in, but you are ' . number_format($dist) . ' m from the address the customer gave. Confirm you are at the right place.' : 'Checked in at the address (' . $dist . ' m away).'));
+            }
+        } else {
+            try {
+                $ref = store_upload('photo', $uid);
+                if (!$ref) throw new UserError('Choose a photo.');
+                if ($k['visit_photo']) delete_upload($k['visit_photo']);
+                q('UPDATE kyc SET visit_photo = ? WHERE user_id = ?', [$ref, $uid]);
+                audit('kyc.visit_photo', 'User #' . $uid);
+                flash('success', 'Visit photo saved.');
+            } catch (UserError $e) {
+                flash('error', $e->getMessage());
+            }
+        }
+        redirect('admin/kyc.php?id=' . $uid);
+    }
+
+    if ($action === 'schedule' && !can('kyc')) {
+        flash('error', 'Only verification staff can schedule visits.');
+        redirect('admin/kyc.php?id=' . $uid);
+    }
+
     if ($action === 'schedule') {
         $date = post('visit_date');
         $time = post('visit_time');
-        $officer = post('officer_name');
+        $officerId = (int)post('officer_id');
+        $officerUser = $officerId ? q_one('SELECT full_name, phone FROM users WHERE id = ? AND role IN ("admin","super_admin")', [$officerId]) : null;
+        $officer = $officerUser['full_name'] ?? post('officer_name');
+        if ($officerUser && post('officer_phone') === '') {
+            $_POST['officer_phone'] = $officerUser['phone'];
+        }
         if (!$date || !$time || !$officer) {
             flash('error', 'Visit date, time and officer are required.');
         } else {
-            q('UPDATE kyc SET visit_date = ?, visit_time = ?, officer_name = ?, officer_phone = ?, rejection_reason = NULL WHERE user_id = ?',
-                [$date, mb_substr($time, 0, 20), mb_substr($officer, 0, 120), mb_substr(post('officer_phone'), 0, 30), $uid]);
+            q('UPDATE kyc SET visit_date = ?, visit_time = ?, officer_name = ?, officer_phone = ?, officer_id = ?, checkin_at = NULL, rejection_reason = NULL WHERE user_id = ?',
+                [$date, mb_substr($time, 0, 20), mb_substr($officer, 0, 120), mb_substr(post('officer_phone'), 0, 30), $officerUser ? $officerId : null, $uid]);
+            if ($officerUser) {
+                notify($officerId, 'Home visit assigned', $cust['full_name'] . ' on ' . fdate($date, 'D, M j') . ' (' . $time . '), ' . $k['address'] . ', ' . $k['city'] . '.', 'admin/kyc.php?id=' . $uid);
+            }
             q('UPDATE users SET kyc_status = "visit_scheduled" WHERE id = ?', [$uid]);
             audit('kyc.schedule_visit', 'User #' . $uid, $date . ' ' . $time . ' · ' . $officer);
             notify($uid, 'Home visit scheduled', 'Officer ' . $officer . ' will visit on ' . fdate($date, 'D, M j') . ' (' . $time . ').', 'verification.php', true);
@@ -78,6 +128,7 @@ if ($id) {
         redirect('admin/kyc.php');
     }
     $savings = savings_total($id);
+    $officers = array_filter(q('SELECT * FROM users WHERE role IN ("admin","super_admin") AND status = "active" ORDER BY full_name')->fetchAll(), fn($s) => can('visits', $s));
     $credit = credit_profile(q_one('SELECT * FROM users WHERE id = ?', [$id]));
     $override = q_val('SELECT credit_limit_override FROM users WHERE id = ?', [$id]);
     $daysSaved = (int)q_val('SELECT COUNT(DISTINCT DATE(created_at)) FROM transactions WHERE user_id = ? AND type = "deposit" AND status = "approved"', [$id]);
@@ -112,7 +163,7 @@ if ($id) {
             <dt>Date of birth</dt><dd><?= fdate($k['dob']) ?> (<?= (int)date_diff(date_create($k['dob']), date_create())->y ?> yrs)</dd>
             <dt>Gender / status</dt><dd><?= e($k['gender']) ?> · <?= e($k['marital_status']) ?></dd>
             <dt>ID</dt><dd><?= e($k['id_type']) ?> · <?= e($k['id_number']) ?></dd>
-            <dt>BVN</dt><dd><?= e($k['bvn']) ?></dd>
+            <dt>BVN</dt><dd><?= e($k['bvn']) ?><?php if ($k['bvn_check']): ?> <span class="badge badge-<?= ['match' => 'ok', 'partial' => 'warn', 'no_match' => 'bad', 'error' => 'muted'][$k['bvn_check']] ?? 'muted' ?>"><?= e(['match' => 'BVN matches name', 'partial' => 'BVN partly matches', 'no_match' => 'BVN name differs', 'error' => 'BVN not checked'][$k['bvn_check']] ?? $k['bvn_check']) ?></span><div class="muted small"><?= e($k['bvn_check_details']) ?></div><?php endif; ?></dd>
           </dl>
         </div>
         <div class="card">
@@ -156,11 +207,32 @@ if ($id) {
             <div class="form-grid">
               <label>Date<input type="date" name="visit_date" required min="<?= date('Y-m-d') ?>" value="<?= e($k['visit_date'] ?: $k['preferred_visit_date']) ?>"></label>
               <label>Time<input name="visit_time" required value="<?= e($k['visit_time'] ?: $k['preferred_visit_time']) ?>"></label>
-              <label>Field officer<input name="officer_name" required value="<?= e($k['officer_name']) ?>"></label>
-              <label>Officer phone<input type="tel" name="officer_phone" value="<?= e($k['officer_phone']) ?>"></label>
+              <label>Field officer
+                <select name="officer_id"><option value="0">Someone else (type below)</option><?php foreach ($officers as $o): ?><option value="<?= $o['id'] ?>" <?= (int)$k['officer_id'] === (int)$o['id'] ? 'selected' : '' ?>><?= e($o['full_name']) ?></option><?php endforeach; ?></select>
+              </label>
+              <label>Officer name <span class="hint">If not on the list</span><input name="officer_name" value="<?= e($k['officer_id'] ? '' : $k['officer_name']) ?>"></label>
+              <label>Officer phone <span class="hint">Shown to the customer</span><input type="tel" name="officer_phone" value="<?= e($k['officer_phone']) ?>"></label>
             </div>
             <button class="btn btn-primary">Save &amp; notify customer</button>
           </form>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($k['kyc_status'] === 'visit_scheduled' || $k['checkin_at'] || $k['visit_photo']): ?>
+        <div class="card">
+          <h2><?= icon('map', 18) ?> At the visit</h2>
+          <dl class="kv">
+            <dt>Check-in</dt><dd><?php if ($k['checkin_at']): ?><?= fdatetime($k['checkin_at']) ?><?php if ($k['checkin_distance_m'] !== null): ?> · <span style="color:var(--<?= $k['checkin_distance_m'] > setting('visit_radius_m') ? 'bad' : 'ok' ?>)"><?= number_format((int)$k['checkin_distance_m']) ?> m from the address</span><?php endif; ?> · <a href="https://www.google.com/maps?q=<?= e($k['checkin_lat'] . ',' . $k['checkin_lng']) ?>" target="_blank" rel="noopener">map</a><?php else: ?>Not yet<?php endif; ?></dd>
+            <dt>Visit photo</dt><dd><?= $k['visit_photo'] ? '<a href="' . e($docUrl('visit_photo')) . '" target="_blank"><img src="' . e($docUrl('visit_photo')) . '" alt="Visit photo" style="max-width:160px;border-radius:8px;display:block"></a>' : 'None yet' ?></dd>
+          </dl>
+          <?php if (can('visits') && $k['kyc_status'] === 'visit_scheduled'): ?>
+            <div class="row" style="margin-top:.6rem">
+              <form method="post" data-checkin><?= csrf_field() ?><input type="hidden" name="action" value="checkin"><input type="hidden" name="user_id" value="<?= $id ?>"><input type="hidden" name="lat"><input type="hidden" name="lng">
+                <button class="btn btn-primary btn-sm" type="submit"><?= icon('map', 16) ?> Check in here</button></form>
+              <form method="post" enctype="multipart/form-data" class="row" data-max-bytes="<?= MAX_UPLOAD_BYTES ?>"><?= csrf_field() ?><input type="hidden" name="action" value="visit_photo"><input type="hidden" name="user_id" value="<?= $id ?>">
+                <input type="file" name="photo" accept="image/*" capture="environment" required style="max-width:200px"><button class="btn btn-ghost btn-sm">Save photo</button></form>
+            </div>
+          <?php endif; ?>
         </div>
         <?php endif; ?>
 

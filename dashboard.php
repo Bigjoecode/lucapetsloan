@@ -43,7 +43,7 @@ app_header('Home', 'dashboard');
       <span class="k"><?= icon('piggy', 16) ?> Total savings</span>
       <span class="v"><?= money($totalSavings) ?></span>
       <span class="s"><?php if ($bestStreak): ?>🔥 <?= $bestStreak ?>-day saving streak<?php else: ?>Make your first deposit today<?php endif; ?><?= $pendingCount ? ' · ' . $pendingCount . ' pending' : '' ?></span>
-      <span class="s"><?= icon('chart', 14) ?> <?= money($interestEarned) ?> interest earned · <?= setting('savings_daily_rate') ?>% daily</span>
+      <span class="s"><?= icon('chart', 14) ?> <?= money($interestEarned) ?> interest earned · <?= setting('savings_annual_rate') ?>% a year</span>
     </div>
     <div class="row">
       <button class="btn btn-accent btn-sm" data-open="dlg-deposit"><?= icon('plus', 16) ?> Save today</button>
@@ -81,6 +81,21 @@ app_header('Home', 'dashboard');
 </div>
 
 <?php if ($u['kyc_status'] === 'verified' && !$loan) echo credit_card_html(credit_profile($u)); ?>
+
+<?php if (setting('referral_bonus') > 0):
+    $inviteUrl = absolute_url('register.php?ref=' . referral_code($uid));
+    $refStats = q_one('SELECT COUNT(*) invited, SUM(status = "rewarded") rewarded, COALESCE(SUM(amount),0) earned FROM referrals WHERE referrer_id = ?', [$uid]);
+    $shareText = 'I save daily and borrow smart with ' . APP_NAME . '. Join with my link: ' . $inviteUrl;
+?>
+<div class="card invite-card row between">
+  <div><h2 style="margin:0"><?= icon('gift', 18) ?> Invite friends, earn <?= money0(setting('referral_bonus')) ?></h2>
+    <span class="muted small">You get <?= money0(setting('referral_bonus')) ?> in your savings when a friend you invite saves <?= money0(setting('referral_min_savings')) ?>. <?= (int)$refStats['invited'] ?> invited · <?= money0($refStats['earned']) ?> earned.</span></div>
+  <div class="row">
+    <input readonly value="<?= e($inviteUrl) ?>" onclick="this.select()" style="width:auto;min-width:220px">
+    <a class="btn btn-primary btn-sm" href="https://wa.me/?text=<?= rawurlencode($shareText) ?>" target="_blank" rel="noopener">Share on WhatsApp</a>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="grid grid-2">
   <div class="card">

@@ -208,6 +208,9 @@ const STAFF_PERMISSIONS = [
     'payments'  => 'Confirm deposits, repayments & withdrawals',
     'customers' => 'Suspend customers & send reset links',
     'products'  => 'Edit loan products',
+    'visits'    => 'Home visits (field officers)',
+    'collections' => 'Collect overdue loans',
+    'reports'   => 'See reports & export data',
 ];
 
 function is_staff(?array $u): bool
@@ -247,6 +250,10 @@ function require_staff(?string $perm = null): array
     if (!is_staff($u) || ($perm !== null && !can($perm, $u))) {
         http_response_code(403);
         exit("You don't have access to this page.");
+    }
+    if (setting('require_staff_2fa') && !$u['totp_enabled'] && !defined('SKIP_2FA_GATE')) {
+        flash('info', 'Set up two-step sign-in to use the staff console.');
+        redirect('admin/security.php');
     }
     return $u;
 }
@@ -533,6 +540,24 @@ function run_schema(): array
         'ALTER TABLE loans ADD COLUMN auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0',
         'ALTER TABLE loans ADD COLUMN auto_approved TINYINT(1) NOT NULL DEFAULT 0',
         'ALTER TABLE transactions ADD COLUMN save_card TINYINT(1) NOT NULL DEFAULT 0',
+        "ALTER TABLE transactions MODIFY type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest','bonus','ajo_contribution','ajo_payout') NOT NULL",
+        'ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) NULL',
+        'ALTER TABLE users ADD COLUMN totp_enabled TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE users ADD COLUMN referral_code VARCHAR(12) NULL',
+        'ALTER TABLE users ADD UNIQUE INDEX uq_referral_code (referral_code)',
+        'ALTER TABLE users ADD COLUMN referred_by INT UNSIGNED NULL',
+        'ALTER TABLE kyc ADD COLUMN bvn_check VARCHAR(20) NULL',
+        'ALTER TABLE kyc ADD COLUMN bvn_check_details VARCHAR(255) NULL',
+        'ALTER TABLE kyc ADD COLUMN officer_id INT UNSIGNED NULL',
+        'ALTER TABLE kyc ADD COLUMN checkin_at DATETIME NULL',
+        'ALTER TABLE kyc ADD COLUMN checkin_lat DECIMAL(10,7) NULL',
+        'ALTER TABLE kyc ADD COLUMN checkin_lng DECIMAL(10,7) NULL',
+        'ALTER TABLE kyc ADD COLUMN checkin_distance_m INT UNSIGNED NULL',
+        'ALTER TABLE kyc ADD COLUMN visit_photo VARCHAR(80) NULL',
+        'ALTER TABLE loans ADD COLUMN first_approver_id INT UNSIGNED NULL',
+        'ALTER TABLE loans ADD COLUMN collector_id INT UNSIGNED NULL',
+        'ALTER TABLE loans ADD COLUMN agreement_accepted_at DATETIME NULL',
+        'ALTER TABLE loans ADD COLUMN agreement_ip VARCHAR(45) NULL',
     ];
     foreach ($migrations as $sql) {
         try {
@@ -630,7 +655,7 @@ function plan_streak(int $planId): int
 }
 
 /**
- * Credit a plan's savings interest (setting('savings_daily_rate') per day, compounded
+ * Credit a plan's savings interest (the yearly rate split into daily parts, compounded
  * daily) for every full day since it was last credited. Call it before any
  * change to the plan's balance so each day earns on the right amount.
  * Returns the interest credited.
@@ -653,12 +678,12 @@ function accrue_plan_interest(int $planId): float
             if ($balance <= 0 || !$from) {
                 q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE id = ?', [$planId]);
             } elseif ($days > 0) {
-                $credited = round($balance * ((1 + setting('savings_daily_rate') / 100) ** $days - 1), 2);
+                $credited = round($balance * ((1 + savings_daily_rate() / 100) ** $days - 1), 2);
                 if ($credited >= 0.01) {   // tiny balances keep counting days until they earn a kobo
                     q('UPDATE savings_plans SET balance = balance + ?, interest_earned = interest_earned + ?, interest_accrued_on = CURDATE() WHERE id = ?',
                         [$credited, $credited, $planId]);
                     q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, note, processed_at) VALUES (?, "interest", ?, "system", "approved", ?, ?, NOW())',
-                        [$plan['user_id'], $credited, $planId, $days . ' day' . ($days === 1 ? '' : 's') . ' at ' . setting('savings_daily_rate') . '% daily']);
+                        [$plan['user_id'], $credited, $planId, $days . ' day' . ($days === 1 ? '' : 's') . ' at ' . setting('savings_annual_rate') . '% a year']);
                 } else {
                     $credited = 0.0;
                 }
@@ -674,6 +699,12 @@ function accrue_plan_interest(int $planId): float
         }
         throw $e;
     }
+}
+
+/** The yearly savings rate as a daily percentage, e.g. 12% a year → 0.0329% a day. */
+function savings_daily_rate(): float
+{
+    return setting('savings_annual_rate') / 365;
 }
 
 /** Bring all of a customer's plans up to date with their savings interest. */
@@ -859,6 +890,29 @@ function loan_series(array $loan): array
 /*  Credit levels                                                      */
 /* ------------------------------------------------------------------ */
 
+/** Straight-line distance in metres between two GPS points. */
+function distance_m(float $lat1, float $lng1, float $lat2, float $lng2): int
+{
+    $r = 6371000;
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLng = deg2rad($lng2 - $lng1);
+    $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+    return (int)round($r * 2 * atan2(sqrt($a), sqrt(1 - $a)));
+}
+
+/** How a collections contact went. */
+const COLLECTION_OUTCOMES = [
+    'promised'   => 'Promised to pay',
+    'no_answer'  => 'No answer',
+    'unreachable'=> 'Phone switched off / unreachable',
+    'paid'       => 'Says they have paid',
+    'hardship'   => 'Hardship (illness, lost income)',
+    'dispute'    => 'Disputes the amount',
+    'visit'      => 'Visited in person',
+    'sms'        => 'Reminder SMS',
+    'other'      => 'Other',
+];
+
 /** Levels and the on-time repayments needed to reach each one. */
 const CREDIT_LEVELS = [['Starter', 0], ['Bronze', 1], ['Silver', 2], ['Gold', 4], ['Platinum', 6]];
 
@@ -1008,6 +1062,9 @@ function process_transaction(int $txId, bool $approve, ?int $adminId, string $no
         }
 
         q('UPDATE transactions SET status = ?, admin_note = ?, processed_at = NOW(), processed_by = ? WHERE id = ?', [$status, $note, $adminId, $txId]);
+        if ($approve && $tx['type'] === 'deposit') {
+            check_referral_reward($uid);   // after the status change, so this deposit counts
+        }
         $pdo->commit();
         return ucfirst(label($tx['type'])) . ' #' . $txId . ' ' . $status . '.';
     } catch (Throwable $e) {

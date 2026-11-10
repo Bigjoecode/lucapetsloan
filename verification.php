@@ -49,6 +49,16 @@ if (is_post() && $editable) {
     $data['years_at_address'] = min(99, max(0, (int)$data['years_at_address']));
     if (!post('consent')) $errors['consent'] = 'Please agree to the physical verification visit.';
 
+    // Check the BVN belongs to this person before booking a visit (only when it's new or changed).
+    if (!$errors && dojah_on() && (!$kyc || $kyc['bvn'] !== $data['bvn'] || empty($kyc['bvn_check']) || $kyc['bvn_check'] === 'error')) {
+        $check = bvn_check($data['bvn'], $u['full_name'], $data['dob']);
+        if ($check['result'] === 'not_found') {
+            $errors['bvn'] = 'We could not find that BVN. Check the 11 digits (dial *565*0# to see your BVN).';
+        }
+        $data['bvn_check'] = $check['result'];
+        $data['bvn_check_details'] = mb_substr($check['details'], 0, 255);
+    }
+
     $docs = ['id_doc' => 'ID document', 'photo' => 'Passport photo', 'utility_bill' => 'Utility bill'];
     $uploaded = [];
     if (!$errors) {

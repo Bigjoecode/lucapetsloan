@@ -26,6 +26,10 @@ Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (f
 
 **SMS (Termii).** Set `TERMII_API_KEY` and `TERMII_SENDER_ID` (a sender ID approved by Termii). Customers then get texts for approvals, pay-outs, payments, due dates, security changes and password reset links.
 
+**BVN checks (Dojah).** Set `DOJAH_APP_ID` and `DOJAH_SECRET_KEY` (and `DOJAH_BASE_URL=https://sandbox.dojah.io` while testing). Every BVN is checked against the customer's name before a home visit is booked; unknown BVNs are refused and name mismatches are flagged for staff.
+
+**Staff security.** Each staff member can turn on two-step sign-in (an authenticator app) under Sign-in security; a super admin can require it for everyone and reset it for someone who loses their phone. Loans at or above the two-approval amount in Settings need two different staff members to approve.
+
 **Daily job.** `vercel.json` runs `/cron.php` every morning (08:00 Lagos). It collects auto-save and auto-repay payments from saved cards, sends due-date reminders and re-checks stuck payments. Set `CRON_SECRET` to any long random string so only Vercel can trigger it. A super admin can also run it from Settings → Daily job.
 
 After deploying an update, open `/install.php` once: it applies any database changes and leaves your data alone.
