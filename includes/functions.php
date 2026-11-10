@@ -323,12 +323,30 @@ function store_upload(string $field, int $userId): ?string
     return 'doc:' . db()->lastInsertId();
 }
 
-/** Create any missing tables. */
+/** Create any missing tables, then bring older databases up to date. */
 function run_schema(): void
 {
     foreach (require __DIR__ . '/schema.php' as $sql) {
         db()->exec($sql);
     }
+    $migrations = [
+        'ALTER TABLE savings_plans ADD COLUMN interest_earned DECIMAL(14,2) NOT NULL DEFAULT 0',
+        'ALTER TABLE savings_plans ADD COLUMN interest_accrued_on DATE NULL',
+        "ALTER TABLE transactions MODIFY type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest') NOT NULL",
+    ];
+    foreach ($migrations as $sql) {
+        try {
+            db()->exec($sql);
+        } catch (PDOException $e) {
+            if (($e->errorInfo[1] ?? 0) !== 1060) {   // 1060: column already exists
+                throw $e;
+            }
+        }
+    }
+    // Savings that were already in a plan start earning from today.
+    q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE interest_accrued_on IS NULL AND balance > 0');
+    q('UPDATE loan_products SET interest_rate = ?, late_fee_rate = ?, min_tenure = ?, max_tenure = ?',
+        [LOAN_MONTHLY_RATE, LOAN_LATE_FEE_RATE, min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS)]);
 }
 
 /** Remove a stored document (database reference or a legacy file in uploads/). */
@@ -407,9 +425,69 @@ function plan_streak(int $planId): int
     return $streak;
 }
 
+/**
+ * Credit a plan's savings interest (SAVINGS_DAILY_RATE per day, compounded
+ * daily) for every full day since it was last credited. Call it before any
+ * change to the plan's balance so each day earns on the right amount.
+ * Returns the interest credited.
+ */
+function accrue_plan_interest(int $planId): float
+{
+    $pdo = db();
+    $own = !$pdo->inTransaction();
+    if ($own) {
+        $pdo->beginTransaction();
+    }
+    try {
+        $plan = q_one('SELECT * FROM savings_plans WHERE id = ? FOR UPDATE', [$planId]);
+        $credited = 0.0;
+        $today = new DateTimeImmutable('today');
+        if ($plan && $plan['status'] !== 'closed') {
+            $balance = (float)$plan['balance'];
+            $from = $plan['interest_accrued_on'] ? new DateTimeImmutable($plan['interest_accrued_on']) : null;
+            $days = $from ? (int)$from->diff($today)->format('%r%a') : 0;
+            if ($balance <= 0 || !$from) {
+                q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE id = ?', [$planId]);
+            } elseif ($days > 0) {
+                $credited = round($balance * ((1 + SAVINGS_DAILY_RATE / 100) ** $days - 1), 2);
+                if ($credited >= 0.01) {   // tiny balances keep counting days until they earn a kobo
+                    q('UPDATE savings_plans SET balance = balance + ?, interest_earned = interest_earned + ?, interest_accrued_on = CURDATE() WHERE id = ?',
+                        [$credited, $credited, $planId]);
+                    q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, note, processed_at) VALUES (?, "interest", ?, "system", "approved", ?, ?, NOW())',
+                        [$plan['user_id'], $credited, $planId, $days . ' day' . ($days === 1 ? '' : 's') . ' at ' . SAVINGS_DAILY_RATE . '% daily']);
+                } else {
+                    $credited = 0.0;
+                }
+            }
+        }
+        if ($own) {
+            $pdo->commit();
+        }
+        return $credited;
+    } catch (Throwable $e) {
+        if ($own) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/** Bring all of a customer's plans up to date with their savings interest. */
+function accrue_user_interest(int $userId): void
+{
+    foreach (q('SELECT id FROM savings_plans WHERE user_id = ? AND status <> "closed"', [$userId])->fetchAll() as $p) {
+        accrue_plan_interest((int)$p['id']);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Loans & interest                                                   */
 /* ------------------------------------------------------------------ */
+
+function tenure_label(int $months): string
+{
+    return ($months * DAYS_PER_MONTH) . ' days';
+}
 
 /**
  * Live picture of a loan. Interest is simple interest at the product's monthly
@@ -598,6 +676,7 @@ function process_transaction(int $txId, bool $approve, int $adminId, string $not
         switch ($tx['type']) {
             case 'deposit':
                 if ($approve) {
+                    accrue_plan_interest((int)$tx['savings_plan_id']);
                     q('UPDATE savings_plans SET balance = balance + ? WHERE id = ?', [$amount, $tx['savings_plan_id']]);
                     $plan = q_one('SELECT * FROM savings_plans WHERE id = ?', [$tx['savings_plan_id']]);
                     if ($plan && (float)$plan['target_amount'] > 0 && (float)$plan['balance'] >= (float)$plan['target_amount'] && $plan['status'] === 'active') {
@@ -612,6 +691,7 @@ function process_transaction(int $txId, bool $approve, int $adminId, string $not
             case 'withdrawal':
                 // Funds were held when the request was made; return them on rejection.
                 if (!$approve) {
+                    accrue_plan_interest((int)$tx['savings_plan_id']);
                     q('UPDATE savings_plans SET balance = balance + ? WHERE id = ?', [$amount, $tx['savings_plan_id']]);
                 }
                 notify($uid, $approve ? 'Withdrawal paid' : 'Withdrawal declined',
@@ -635,6 +715,62 @@ function process_transaction(int $txId, bool $approve, int $adminId, string $not
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Password reset & email                                             */
+/* ------------------------------------------------------------------ */
+
+/** Issue a one-time reset token; only its hash is stored. */
+function create_reset_token(int $userId, int $minutes): string
+{
+    $token = bin2hex(random_bytes(32));
+    q('INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))',
+        [$userId, hash('sha256', $token), $minutes]);
+    return $token;
+}
+
+/** The unused, unexpired reset row for a token, with its user. */
+function find_reset(string $token): ?array
+{
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+        return null;
+    }
+    return q_one('SELECT r.id reset_id, u.* FROM password_resets r JOIN users u ON u.id = r.user_id
+                  WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > NOW()', [hash('sha256', $token)]);
+}
+
+/** Absolute link, for emails and links shared outside the app. */
+function absolute_url(string $path): string
+{
+    $host = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost';
+    return (is_https() ? 'https://' : 'http://') . $host . url($path);
+}
+
+function mail_enabled(): bool
+{
+    return RESEND_API_KEY !== '';
+}
+
+/** Send an email through Resend. Returns false if it could not be sent. */
+function send_mail(string $to, string $subject, string $html): bool
+{
+    if (!mail_enabled()) {
+        return false;
+    }
+    $ctx = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer " . RESEND_API_KEY . "\r\nContent-Type: application/json\r\n",
+        'content'       => json_encode(['from' => MAIL_FROM, 'to' => [$to], 'subject' => $subject, 'html' => $html]),
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $res = @file_get_contents('https://api.resend.com/emails', false, $ctx);
+    $ok = $res !== false && preg_match('#^HTTP/\S+ 2\d\d#', $http_response_header[0] ?? '');
+    if (!$ok) {
+        error_log('[lucapetloan] email to ' . $to . ' failed: ' . ($http_response_header[0] ?? 'no response') . ' ' . substr((string)$res, 0, 300));
+    }
+    return (bool)$ok;
 }
 
 /* ------------------------------------------------------------------ */

@@ -18,6 +18,10 @@ The app runs on Vercel through the community PHP runtime (`vercel-php`, see `ver
 
 Optional environment variables: `APP_NAME`, `BANK_NAME`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `APP_TIMEZONE`.
 
+Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (for example `LucaPet Loan <no-reply@yourdomain.com>`, on a domain verified in Resend). Without a key, reset requests notify the admins, who create a one-time link under Customers → Reset link and send it by SMS or WhatsApp.
+
+After deploying an update, open `/install.php` once: it applies any database changes and leaves your data alone.
+
 ## Flow
 
 | Step | Customer | Staff (`/admin`) |

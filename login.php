@@ -43,7 +43,7 @@ public_header('Sign in');
     <form method="post" class="form">
       <?= csrf_field() ?>
       <label>Email or phone<input name="login" required autocomplete="username" value="<?= e(post('login')) ?>"></label>
-      <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
+      <label><span class="row between">Password <a class="small" href="<?= url('forgot_password.php') ?>">Forgot password?</a></span><input type="password" name="password" required autocomplete="current-password"></label>
       <button class="btn btn-primary btn-block">Sign in</button>
     </form>
     <p class="muted small" style="margin-top:1rem;text-align:center">New here? <a href="<?= url('register.php') ?>">Create an account</a></p>

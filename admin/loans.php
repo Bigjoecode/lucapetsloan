@@ -118,9 +118,9 @@ if ($id) {
           <h2>Application</h2>
           <dl class="kv">
             <dt>Amount</dt><dd><?= money($loan['amount']) ?></dd>
-            <dt>Rate</dt><dd><?= (float)$loan['interest_rate'] ?>%/month · late fee <?= (float)$loan['late_fee_rate'] ?>%/day</dd>
-            <dt>Tenure</dt><dd><?= (int)$loan['tenure_months'] ?> months</dd>
-            <dt>Total repayable</dt><dd><?= money($s['total_repayable']) ?> (<?= money($s['installment']) ?>/month)</dd>
+            <dt>Rate</dt><dd><?= (float)$loan['interest_rate'] ?>% per 30 days · late fee <?= (float)$loan['late_fee_rate'] ?>%/day</dd>
+            <dt>Tenure</dt><dd><?= tenure_label((int)$loan['tenure_months']) ?></dd>
+            <dt>Total repayable</dt><dd><?= money($s['total_repayable']) ?> (<?= money($s['installment']) ?> every 30 days)</dd>
             <dt>Purpose</dt><dd><?= e($loan['purpose']) ?></dd>
             <dt>Applied</dt><dd><?= fdatetime($loan['applied_at']) ?></dd>
             <?php if ($loan['approved_at']): ?><dt>Approved</dt><dd><?= fdatetime($loan['approved_at']) ?></dd><?php endif; ?>
@@ -254,7 +254,7 @@ app_header('Loans', 'loans', 'admin');
             <td class="num"><strong><?= money($s['payoff']) ?></strong></td>
             <td><?= fdate($l['due_date']) ?> <?= $s['is_overdue'] ? badge('overdue') : '' ?></td>
           <?php else: ?>
-            <td><?= (int)$l['tenure_months'] ?> mo @ <?= (float)$l['interest_rate'] ?>%</td>
+            <td><?= tenure_label((int)$l['tenure_months']) ?> @ <?= (float)$l['interest_rate'] ?>%</td>
             <td class="muted small"><?= fdate($l['applied_at']) ?></td>
           <?php endif; ?>
           <td class="right"><a class="btn btn-ghost btn-sm" href="?id=<?= $l['id'] ?>">Open</a></td>

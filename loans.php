@@ -19,13 +19,13 @@ if (is_post()) {
         if ($amount < (float)$p['min_amount'] || $amount > (float)$p['max_amount']) {
             throw new UserError('Amount for ' . $p['name'] . ' must be between ' . money0($p['min_amount']) . ' and ' . money0($p['max_amount']) . '.');
         }
-        if ($tenure < (int)$p['min_tenure'] || $tenure > (int)$p['max_tenure']) throw new UserError('Choose a valid tenure.');
+        if (!in_array($tenure, LOAN_TENURE_MONTHS, true)) throw new UserError('Choose 30 or 60 days.');
         $purpose = mb_substr(post('purpose'), 0, 255);
         if (mb_strlen($purpose) < 5) throw new UserError('Tell us briefly what the loan is for.');
         if (!post('agree')) throw new UserError('Please accept the loan terms.');
 
         q('INSERT INTO loans (user_id, product_id, amount, interest_rate, late_fee_rate, tenure_months, purpose) VALUES (?,?,?,?,?,?,?)',
-            [$uid, $p['id'], $amount, $p['interest_rate'], $p['late_fee_rate'], $tenure, $purpose]);
+            [$uid, $p['id'], $amount, LOAN_MONTHLY_RATE, LOAN_LATE_FEE_RATE, $tenure, $purpose]);
         $id = (int)db()->lastInsertId();
         foreach (q('SELECT id FROM users WHERE role = "admin"')->fetchAll() as $a) {
             notify((int)$a['id'], 'New loan application', $u['full_name'] . ' applied for ' . money0($amount) . '.', 'admin/loans.php?id=' . $id);
@@ -58,7 +58,7 @@ app_header('Loans', 'loans');
             <div class="title"><?= e($l['product']) ?> · <?= money0($l['amount']) ?></div>
             <div class="sub">
               <?php if ($l['status'] === 'active'): ?>Clear today: <strong><?= money($s['payoff']) ?></strong> · interest so far <?= money($s['accrued_interest']) ?>
-              <?php else: ?><?= (float)$l['interest_rate'] ?>%/month · <?= (int)$l['tenure_months'] ?> mo · applied <?= fdate($l['applied_at']) ?><?php endif; ?>
+              <?php else: ?><?= (float)$l['interest_rate'] ?>% per 30 days · <?= tenure_label((int)$l['tenure_months']) ?> · applied <?= fdate($l['applied_at']) ?><?php endif; ?>
             </div>
           </div>
           <?= badge($s['display_status']) ?>
@@ -87,14 +87,14 @@ app_header('Loans', 'loans');
         <label>Loan product
           <select name="product_id">
             <?php foreach ($products as $p): ?>
-              <option value="<?= $p['id'] ?>" data-rate="<?= (float)$p['interest_rate'] ?>" data-min="<?= (float)$p['min_amount'] ?>" data-max="<?= (float)$p['max_amount'] ?>" data-tmin="<?= (int)$p['min_tenure'] ?>" data-tmax="<?= (int)$p['max_tenure'] ?>"><?= e($p['name']) ?> · <?= (float)$p['interest_rate'] ?>%/month</option>
+              <option value="<?= $p['id'] ?>" data-rate="<?= LOAN_MONTHLY_RATE ?>" data-min="<?= (float)$p['min_amount'] ?>" data-max="<?= (float)$p['max_amount'] ?>" data-tmin="<?= min(LOAN_TENURE_MONTHS) ?>" data-tmax="<?= max(LOAN_TENURE_MONTHS) ?>"><?= e($p['name']) ?> · <?= money0($p['min_amount']) ?>–<?= money0($p['max_amount']) ?></option>
             <?php endforeach; ?>
           </select>
         </label>
         <label>Amount <span class="hint" data-range></span><input type="number" name="amount" required step="500" value="<?= (float)$products[0]['min_amount'] ?>"></label>
         <label>Repay over<select name="tenure_months"></select></label>
         <label>What is the loan for?<textarea name="purpose" required maxlength="255" placeholder="e.g. Buy stock for my provisions shop"></textarea></label>
-        <label class="check"><input type="checkbox" name="agree" value="1"><span class="small">I understand interest builds up daily from the day the loan is paid to me, and a late fee applies each day after the due date.</span></label>
+        <label class="check"><input type="checkbox" name="agree" value="1"><span class="small">I understand interest of <?= LOAN_MONTHLY_RATE ?>% per 30 days builds up daily from the day the loan is paid to me, and a penalty of <?= LOAN_LATE_FEE_RATE ?>% of the unpaid balance is added every day after the due date.</span></label>
         <button class="btn btn-primary">Submit application</button>
       </form>
       <div class="calc-out" id="loan-calc">
@@ -104,9 +104,9 @@ app_header('Loans', 'loans');
           <dt>Interest rate</dt><dd data-o="rate">—</dd>
           <dt>Total interest</dt><dd class="tnum" data-o="interest">—</dd>
           <dt>Interest per day</dt><dd class="tnum" data-o="daily">—</dd>
-          <dt>Monthly installment</dt><dd class="tnum" data-o="monthly">—</dd>
+          <dt>Due every 30 days</dt><dd class="tnum" data-o="monthly">—</dd>
         </dl>
-        <p class="muted small" style="margin:.6rem 0 0">Pay early and you only pay the interest built up so far. Your savings (<?= money0($savings) ?>) can also be used to repay.</p>
+        <p class="muted small" style="margin:.6rem 0 0">Late? A <?= LOAN_LATE_FEE_RATE ?>% penalty on the unpaid balance is added each day after the due date. Pay early and you only pay the interest built up so far. Your savings (<?= money0($savings) ?>) can also be used to repay.</p>
       </div>
     </div>
   <?php endif; ?>

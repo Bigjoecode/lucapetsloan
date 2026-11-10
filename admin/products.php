@@ -11,14 +11,14 @@ if (is_post()) {
     } else {
         $d = [
             mb_substr(post('name'), 0, 80), mb_substr(post('description'), 0, 255),
-            (float)post('min_amount'), (float)post('max_amount'), (float)post('interest_rate'),
-            (int)post('min_tenure'), (int)post('max_tenure'), (float)post('late_fee_rate'),
+            (float)post('min_amount'), (float)post('max_amount'), LOAN_MONTHLY_RATE,
+            min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS), LOAN_LATE_FEE_RATE,
         ];
-        if ($d[0] === '' || $d[2] <= 0 || $d[3] < $d[2] || $d[4] <= 0 || $d[5] < 1 || $d[6] < $d[5] || $d[6] > 60 || $d[7] < 0) {
-            flash('error', 'Check the values: name is required, max must be at least min, and the rate must be above 0.');
+        if ($d[0] === '' || $d[2] <= 0 || $d[3] < $d[2]) {
+            flash('error', 'Check the values: name is required and max must be at least min.');
         } elseif ($pid) {
             q('UPDATE loan_products SET name=?, description=?, min_amount=?, max_amount=?, interest_rate=?, min_tenure=?, max_tenure=?, late_fee_rate=? WHERE id = ?', [...$d, $pid]);
-            flash('success', 'Product saved. New rates apply to new applications only.');
+            flash('success', 'Product saved.');
         } else {
             q('INSERT INTO loan_products (name, description, min_amount, max_amount, interest_rate, min_tenure, max_tenure, late_fee_rate) VALUES (?,?,?,?,?,?,?,?)', $d);
             flash('success', 'Product created.');
@@ -37,12 +37,13 @@ app_header('Loan products', 'products', 'admin');
 <div class="grid grid-2" style="align-items:start">
   <div class="card">
     <h2>Products</h2>
+    <p class="muted small">Every product uses the same terms: <?= LOAN_MONTHLY_RATE ?>% interest per 30 days, repaid in 30 or 60 days, with a <?= LOAN_LATE_FEE_RATE ?>% daily penalty on the unpaid balance after the due date. Products set the amount range.</p>
     <ul class="list">
       <?php foreach ($products as $p): ?>
         <li>
           <div class="grow">
             <div class="title"><?= e($p['name']) ?> <?= $p['is_active'] ? '' : '<span class="badge badge-muted">hidden</span>' ?></div>
-            <div class="sub"><?= (float)$p['interest_rate'] ?>%/month · <?= money0($p['min_amount']) ?>–<?= money0($p['max_amount']) ?> · <?= (int)$p['min_tenure'] ?>–<?= (int)$p['max_tenure'] ?> mo · late <?= (float)$p['late_fee_rate'] ?>%/day · <?= (int)$p['loans'] ?> loans</div>
+            <div class="sub"><?= money0($p['min_amount']) ?>–<?= money0($p['max_amount']) ?> · <?= (int)$p['loans'] ?> loans</div>
           </div>
           <a class="btn btn-ghost btn-sm" href="?edit=<?= $p['id'] ?>">Edit</a>
           <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-ghost btn-sm"><?= $p['is_active'] ? 'Hide' : 'Show' ?></button></form>
@@ -59,10 +60,6 @@ app_header('Loan products', 'products', 'admin');
       <div class="form-grid">
         <label>Min amount<input type="number" name="min_amount" step="100" required value="<?= $f('min_amount') ?>"></label>
         <label>Max amount<input type="number" name="max_amount" step="100" required value="<?= $f('max_amount') ?>"></label>
-        <label>Interest % per month<input type="number" name="interest_rate" step="0.01" required value="<?= $f('interest_rate') ?>"></label>
-        <label>Late fee % per day<input type="number" name="late_fee_rate" step="0.001" required value="<?= $f('late_fee_rate', '0.5') ?>"></label>
-        <label>Min tenure (months)<input type="number" name="min_tenure" min="1" required value="<?= $f('min_tenure', 1) ?>"></label>
-        <label>Max tenure (months)<input type="number" name="max_tenure" min="1" max="60" required value="<?= $f('max_tenure', 6) ?>"></label>
       </div>
       <div class="row">
         <button class="btn btn-primary"><?= $edit ? 'Save changes' : 'Create product' ?></button>

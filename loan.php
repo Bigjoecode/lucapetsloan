@@ -2,6 +2,7 @@
 require __DIR__ . '/includes/bootstrap.php';
 $u = require_login();
 $uid = (int)$u['id'];
+accrue_user_interest($uid);
 $id = (int)($_GET['id'] ?? $_POST['loan_id'] ?? 0);
 $loan = q_one('SELECT l.*, p.name product FROM loans l JOIN loan_products p ON p.id = l.product_id WHERE l.id = ? AND l.user_id = ?', [$id, $uid]);
 if (!$loan) {
@@ -24,6 +25,9 @@ if (is_post()) {
             try {
                 $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ? AND status <> "closed" FOR UPDATE', [(int)post('plan_id'), $uid]);
                 if (!$plan) throw new UserError('Choose a savings plan.');
+                if (accrue_plan_interest((int)$plan['id']) > 0) {
+                    $plan = q_one('SELECT * FROM savings_plans WHERE id = ?', [$plan['id']]);
+                }
                 if ($amount > (float)$plan['balance']) throw new UserError('That plan only has ' . money($plan['balance']) . '.');
                 q('UPDATE savings_plans SET balance = balance - ? WHERE id = ?', [$amount, $plan['id']]);
                 q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, loan_id, note, processed_at) VALUES (?, "loan_repayment", ?, "savings", "approved", ?, ?, ?, NOW())',
@@ -101,11 +105,11 @@ app_header('Loan #' . $loan['id'], 'loans');
     <h2>Loan details</h2>
     <dl class="kv">
       <dt>Amount borrowed</dt><dd><?= money($loan['amount']) ?></dd>
-      <dt>Interest rate</dt><dd><?= (float)$loan['interest_rate'] ?>% per month (<?= money($s['daily_interest']) ?>/day)</dd>
-      <dt>Tenure</dt><dd><?= (int)$loan['tenure_months'] ?> month<?= $loan['tenure_months'] == 1 ? '' : 's' ?> (<?= $s['term_days'] ?> days)</dd>
+      <dt>Interest rate</dt><dd><?= (float)$loan['interest_rate'] ?>% per 30 days (<?= money($s['daily_interest']) ?>/day)</dd>
+      <dt>Tenure</dt><dd><?= $s['term_days'] ?> days</dd>
       <dt>Total interest at maturity</dt><dd><?= money($s['total_interest']) ?></dd>
       <dt>Total repayable</dt><dd><?= money($s['total_repayable']) ?></dd>
-      <dt>Late fee</dt><dd><?= (float)$loan['late_fee_rate'] ?>% of unpaid balance per day<?= $s['penalty'] > 0 ? ' · now ' . money($s['penalty']) : '' ?></dd>
+      <dt>Late penalty</dt><dd><?= (float)$loan['late_fee_rate'] ?>% of unpaid balance per day<?= $s['penalty'] > 0 ? ' · now ' . money($s['penalty']) : '' ?></dd>
       <dt>Purpose</dt><dd><?= e($loan['purpose']) ?></dd>
       <dt>Applied</dt><dd><?= fdatetime($loan['applied_at']) ?></dd>
     </dl>

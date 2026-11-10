@@ -40,15 +40,16 @@ function brand_mark(): string
 /** One transaction as a list item. */
 function tx_row(array $t, bool $showUser = false): string
 {
-    $in = in_array($t['type'], ['deposit', 'loan_disbursement'], true);
+    $in = in_array($t['type'], ['deposit', 'loan_disbursement', 'interest'], true);
     [$cls, $ic] = match ($t['type']) {
         'deposit'           => ['tx-in', 'down'],
+        'interest'          => ['tx-in', 'chart'],
         'withdrawal'        => ['tx-out', 'up'],
         'loan_disbursement' => ['tx-loan', 'loan'],
         default             => ['tx-loan', 'check'],
     };
-    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment'];
-    $sub = fdatetime($t['created_at']) . ' · ' . (payment_methods()[$t['method']] ?? label($t['method']));
+    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment', 'interest' => 'Savings interest'];
+    $sub = fdatetime($t['created_at']) . ' · ' . ($t['type'] === 'interest' ? ($t['note'] ?? '') : (payment_methods()[$t['method']] ?? label($t['method'])));
     if ($showUser && isset($t['full_name'])) {
         $sub = e($t['full_name']) . ' · ' . $sub;
     } else {
@@ -121,7 +122,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=1"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=3"></script>
 </body>
 </html>
 <?php
@@ -202,7 +203,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=1"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=3"></script>
 </body>
 </html>
 <?php

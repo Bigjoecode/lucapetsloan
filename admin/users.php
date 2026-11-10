@@ -10,6 +10,15 @@ if (is_post()) {
     } elseif (post('action') === 'toggle_status') {
         q('UPDATE users SET status = IF(status = "active", "suspended", "active") WHERE id = ?', [$uid]);
         flash('success', 'Account status updated.');
+    } elseif (post('action') === 'reset_link') {
+        $target = q_one('SELECT full_name, phone FROM users WHERE id = ?', [$uid]);
+        if ($target) {
+            // Shown to staff once, to send the customer by SMS or WhatsApp after confirming who they are.
+            $_SESSION['reset_link'] = [
+                'name' => $target['full_name'], 'phone' => $target['phone'],
+                'url'  => absolute_url('reset_password.php?token=' . create_reset_token($uid, 24 * 60)),
+            ];
+        }
     } elseif (post('action') === 'toggle_admin') {
         q('UPDATE users SET role = IF(role = "admin", "customer", "admin") WHERE id = ?', [$uid]);
         flash('success', 'Role updated.');
@@ -29,9 +38,18 @@ $rows = q("SELECT u.*,
     (SELECT status FROM loans l WHERE l.user_id = u.id ORDER BY l.id DESC LIMIT 1) last_loan
   FROM users u WHERE $where ORDER BY u.id DESC LIMIT 300", $params)->fetchAll();
 
+$resetLink = $_SESSION['reset_link'] ?? null;
+unset($_SESSION['reset_link']);
+
 app_header('Customers', 'users', 'admin');
 ?>
 <h1 class="mobile-title">Customers</h1>
+<?php if ($resetLink): ?>
+  <div class="alert alert-info">
+    <strong>Password reset link for <?= e($resetLink['name']) ?></strong> (<?= e($resetLink['phone']) ?>). Send it to them by SMS or WhatsApp. It works once, for 24 hours, and won't be shown again.
+    <input readonly value="<?= e($resetLink['url']) ?>" onclick="this.select()" style="margin-top:.5rem;width:100%">
+  </div>
+<?php endif; ?>
 <form class="row" method="get">
   <input name="s" value="<?= e($search) ?>" placeholder="Search name, email or phone" style="max-width:320px">
   <button class="btn btn-ghost btn-sm">Search</button>
@@ -55,6 +73,7 @@ app_header('Customers', 'users', 'admin');
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end">
               <?= csrf_field() ?><input type="hidden" name="user_id" value="<?= $r['id'] ?>">
               <button class="btn btn-ghost btn-sm" name="action" value="toggle_status" data-confirm="<?= $r['status'] === 'active' ? 'Suspend' : 'Reactivate' ?> this account?"><?= $r['status'] === 'active' ? 'Suspend' : 'Activate' ?></button>
+              <button class="btn btn-ghost btn-sm" name="action" value="reset_link" data-confirm="Create a password reset link for this customer? Only send it after confirming it's really them.">Reset link</button>
               <button class="btn btn-ghost btn-sm" name="action" value="toggle_admin" data-confirm="Change this user's staff access?"><?= $r['role'] === 'admin' ? 'Remove admin' : 'Make admin' ?></button>
             </form>
             <?php endif; ?>

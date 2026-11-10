@@ -43,9 +43,10 @@ if (is_post()) {
             run_schema();
             if (!(int)q_val('SELECT COUNT(*) FROM loan_products')) {
                 $ins = db()->prepare('INSERT INTO loan_products (name, description, min_amount, max_amount, interest_rate, min_tenure, max_tenure, late_fee_rate) VALUES (?,?,?,?,?,?,?,?)');
-                $ins->execute(['Quick Cash', 'Small emergency loan, repaid within 1–3 months.', 5000, 50000, 5.00, 1, 3, 0.50]);
-                $ins->execute(['Trader Boost', 'Working capital for market traders and small shops.', 50000, 500000, 4.00, 2, 6, 0.40]);
-                $ins->execute(['Business Growth', 'Bigger loans for established businesses with strong savings history.', 300000, 2000000, 3.50, 3, 12, 0.30]);
+                $terms = [LOAN_MONTHLY_RATE, min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS), LOAN_LATE_FEE_RATE];
+                $ins->execute(['Quick Cash', 'Small emergency loan, repaid in 30 or 60 days.', 5000, 50000, ...$terms]);
+                $ins->execute(['Trader Boost', 'Working capital for market traders and small shops.', 50000, 500000, ...$terms]);
+                $ins->execute(['Business Growth', 'Bigger loans for established businesses with strong savings history.', 300000, 2000000, ...$terms]);
             }
             if (q_one('SELECT id FROM users WHERE email = ? OR phone = ?', [$email, $phone])) {
                 q('UPDATE users SET role = "admin" WHERE email = ? OR phone = ?', [$email, $phone]);

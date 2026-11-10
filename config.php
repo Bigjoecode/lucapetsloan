@@ -48,6 +48,18 @@ define('MIN_WITHDRAWAL', 500);
 define('MAX_UPLOAD_BYTES', IS_VERCEL ? (int)(1.3 * 1024 * 1024) : 5 * 1024 * 1024);
 define('DAYS_PER_MONTH', 30);                   // interest month length
 
+// Loan terms, the same for every product
+define('LOAN_MONTHLY_RATE', 19.8);              // percent per 30 days
+define('LOAN_LATE_FEE_RATE', 2.0);              // percent of the unpaid balance per day after the due date
+define('LOAN_TENURE_MONTHS', [1, 2]);           // 30 or 60 days
+
+define('SAVINGS_DAILY_RATE', 0.2);              // percent per day, credited to each plan daily
+
+// Password reset emails go out through Resend (resend.com) when a key is set;
+// without one, reset requests reach the admins, who send the customer a link.
+define('RESEND_API_KEY', env('RESEND_API_KEY', ''));
+define('MAIL_FROM', env('MAIL_FROM', APP_NAME . ' <onboarding@resend.dev>'));
+
 define('UPLOAD_DIR', __DIR__ . '/uploads');     // only used for documents uploaded before they moved into the database
 
 date_default_timezone_set(env('APP_TIMEZONE', 'Africa/Lagos'));

@@ -2,6 +2,7 @@
 require __DIR__ . '/includes/bootstrap.php';
 $u = require_login();
 $uid = (int)$u['id'];
+accrue_user_interest($uid);
 
 if (is_post()) {
     verify_csrf();
@@ -44,6 +45,9 @@ if (is_post()) {
             try {
                 $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ? AND status <> "closed" FOR UPDATE', [(int)post('plan_id'), $uid]);
                 if (!$plan) throw new UserError('Choose a savings plan.');
+                if (accrue_plan_interest((int)$plan['id']) > 0) {
+                    $plan = q_one('SELECT * FROM savings_plans WHERE id = ?', [$plan['id']]);
+                }
                 if ($amount > (float)$plan['balance']) throw new UserError('You only have ' . money($plan['balance']) . ' in that plan.');
                 // Hold the funds now so they can't be spent twice; they are returned if the request is declined.
                 q('UPDATE savings_plans SET balance = balance - ? WHERE id = ?', [$amount, $plan['id']]);
@@ -73,6 +77,7 @@ if (is_post()) {
 $plans = q('SELECT * FROM savings_plans WHERE user_id = ? AND status <> "closed" ORDER BY id', [$uid])->fetchAll();
 $withdrawable = array_values(array_filter($plans, fn($p) => (float)$p['balance'] > 0));
 $total = array_sum(array_map(fn($p) => (float)$p['balance'], $plans));
+$earned = array_sum(array_map(fn($p) => (float)$p['interest_earned'], $plans));
 $pending = q('SELECT * FROM transactions WHERE user_id = ? AND status = "pending" AND type IN ("deposit","withdrawal") ORDER BY id DESC', [$uid])->fetchAll();
 $hasBank = (bool)q_val('SELECT COUNT(*) FROM kyc WHERE user_id = ?', [$uid]);
 
@@ -81,7 +86,7 @@ app_header('Savings', 'savings');
 <h1 class="mobile-title">Savings</h1>
 
 <div class="card hero-card row between">
-  <div class="stat"><span class="k">Total saved across <?= count($plans) ?> plan<?= count($plans) === 1 ? '' : 's' ?></span><span class="v"><?= money($total) ?></span></div>
+  <div class="stat"><span class="k">Total saved across <?= count($plans) ?> plan<?= count($plans) === 1 ? '' : 's' ?></span><span class="v"><?= money($total) ?></span><span class="s">Earning <?= SAVINGS_DAILY_RATE ?>% interest every day · <?= money($earned) ?> earned so far</span></div>
   <div class="row">
     <button class="btn btn-accent btn-sm" data-open="dlg-deposit"><?= icon('plus', 16) ?> Deposit</button>
     <button class="btn btn-light btn-sm" data-open="dlg-withdraw" id="withdraw"><?= icon('up', 16) ?> Withdraw</button>
@@ -107,7 +112,7 @@ app_header('Savings', 'savings');
       <?= badge($p['status']) ?>
     </div>
     <div class="row between">
-      <div class="stat"><span class="k">Balance</span><span class="v"><?= money($p['balance']) ?></span></div>
+      <div class="stat"><span class="k">Balance</span><span class="v"><?= money($p['balance']) ?></span><span class="s">+<?= money($p['interest_earned']) ?> interest · about <?= money((float)$p['balance'] * SAVINGS_DAILY_RATE / 100) ?> tomorrow</span></div>
       <?php if ($streak): ?><span class="streak"><?= icon('fire', 16) ?><?= $streak ?>-day streak</span><?php endif; ?>
     </div>
     <?php if ($pct !== null): ?>
@@ -135,7 +140,7 @@ app_header('Savings', 'savings');
 
   <div class="card" id="new">
     <h2>New savings plan</h2>
-    <p class="muted small">Set a daily amount you can keep up with. A steady saving record helps your loan application.</p>
+    <p class="muted small">Set a daily amount you can keep up with. Every plan earns <?= SAVINGS_DAILY_RATE ?>% interest per day on its balance, and a steady saving record helps your loan application.</p>
     <form method="post" class="form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="create_plan">

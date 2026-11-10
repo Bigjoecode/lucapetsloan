@@ -56,7 +56,7 @@
       tenure.innerHTML = '';
       for (let m = tmin; m <= tmax; m++) {
         const op = document.createElement('option');
-        op.value = m; op.textContent = m + (m === 1 ? ' month' : ' months');
+        op.value = m; op.textContent = (m * 30) + ' days';
         tenure.appendChild(op);
       }
       tenure.value = cur >= tmin && cur <= tmax ? cur : tmin;

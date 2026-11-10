@@ -1,8 +1,9 @@
 <?php
 require __DIR__ . '/includes/bootstrap.php';
 $u = require_login();
+accrue_user_interest((int)$u['id']);
 
-$types = ['' => 'All', 'deposit' => 'Deposits', 'withdrawal' => 'Withdrawals', 'loan_disbursement' => 'Loans paid out', 'loan_repayment' => 'Repayments'];
+$types = ['' => 'All', 'deposit' => 'Deposits', 'withdrawal' => 'Withdrawals', 'loan_disbursement' => 'Loans paid out', 'loan_repayment' => 'Repayments', 'interest' => 'Interest'];
 $type = array_key_exists($_GET['type'] ?? '', $types) ? ($_GET['type'] ?? '') : '';
 $page = max(1, (int)($_GET['page'] ?? 1));
 $per = 25;
@@ -19,16 +20,18 @@ $rows = q("SELECT * FROM transactions WHERE $where ORDER BY id DESC LIMIT $per O
 $sum = q('SELECT
     COALESCE(SUM(CASE WHEN type="deposit" AND status="approved" THEN amount END),0) dep,
     COALESCE(SUM(CASE WHEN type="withdrawal" AND status="approved" THEN amount END),0) wd,
-    COALESCE(SUM(CASE WHEN type="loan_repayment" AND status="approved" THEN amount END),0) rep
+    COALESCE(SUM(CASE WHEN type="loan_repayment" AND status="approved" THEN amount END),0) rep,
+    COALESCE(SUM(CASE WHEN type="interest" THEN amount END),0) intr
   FROM transactions WHERE user_id = ?', [$u['id']])->fetch();
 
 app_header('Activity', 'transactions');
 ?>
 <h1 class="mobile-title">Activity</h1>
-<div class="grid grid-3">
+<div class="grid grid-4">
   <div class="card stat"><span class="k">Total deposited</span><span class="v"><?= money($sum['dep']) ?></span></div>
   <div class="card stat"><span class="k">Total withdrawn</span><span class="v"><?= money($sum['wd']) ?></span></div>
   <div class="card stat"><span class="k">Loan repayments</span><span class="v"><?= money($sum['rep']) ?></span></div>
+  <div class="card stat"><span class="k">Savings interest earned</span><span class="v"><?= money($sum['intr']) ?></span></div>
 </div>
 <div class="card">
   <div class="row" style="margin-bottom:.6rem">

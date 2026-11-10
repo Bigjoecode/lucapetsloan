@@ -85,6 +85,8 @@ return [
   daily_amount DECIMAL(14,2) NOT NULL,
   target_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   balance DECIMAL(14,2) NOT NULL DEFAULT 0,
+  interest_earned DECIMAL(14,2) NOT NULL DEFAULT 0,
+  interest_accrued_on DATE NULL COMMENT 'last day savings interest was credited up to',
   status ENUM('active','completed','closed') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (user_id),
@@ -130,7 +132,7 @@ return [
 "CREATE TABLE IF NOT EXISTS transactions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL,
-  type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment') NOT NULL,
+  type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest') NOT NULL,
   amount DECIMAL(14,2) NOT NULL,
   method VARCHAR(30) NOT NULL,
   reference VARCHAR(80) NULL,
@@ -156,6 +158,17 @@ return [
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (user_id, is_read),
   CONSTRAINT fk_note_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS password_resets (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (user_id),
+  CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
 SESSIONS_TABLE_SQL,
