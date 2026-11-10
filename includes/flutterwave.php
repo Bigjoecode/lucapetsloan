@@ -213,6 +213,27 @@ function flw_send_withdrawal(int $txId, ?int $staffId): string
     return 'Transfer of ' . money($tx['amount']) . ' sent to Flutterwave. It completes once the bank confirms.';
 }
 
+/**
+ * Why a withdrawal must wait for staff instead of going out instantly, or null
+ * if it may be sent. Only applies when instant payouts are switched on.
+ */
+function auto_payout_hold(int $userId, int $txId): ?string
+{
+    if (!setting('auto_payouts') || !flw_payouts_on()) {
+        return null;
+    }
+    $limit = setting('auto_payout_daily_limit');
+    $today = (float)q_val('SELECT COALESCE(SUM(amount),0) FROM transactions WHERE user_id = ? AND type = "withdrawal" AND status <> "rejected" AND DATE(created_at) = CURDATE()', [$userId]);
+    if ($limit > 0 && $today > $limit) {
+        return 'over the ' . money0($limit) . ' daily instant limit (' . money0($today) . ' today)';
+    }
+    // A freshly changed payout account is the classic sign of a stolen login.
+    if (q_val('SELECT 1 FROM audit_log WHERE action = "customer.payout_account" AND target = ? AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) LIMIT 1', ['Customer #' . $userId])) {
+        return 'payout account changed in the last 24 hours';
+    }
+    return null;
+}
+
 /** Apply a transfer result (from the webhook or a status check). */
 function flw_settle_transfer(array $data): ?array
 {

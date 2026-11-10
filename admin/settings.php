@@ -19,6 +19,7 @@ if (is_post()) {
         'flw_deposits'        => (int)(bool)post('flw_deposits'),
         'flw_payouts'         => (int)(bool)post('flw_payouts'),
         'auto_payouts'        => (int)(bool)post('auto_payouts'),
+        'auto_payout_daily_limit' => (int)$num('auto_payout_daily_limit'),
         'bank_name'           => mb_substr(post('bank_name'), 0, 80),
         'bank_account_name'   => mb_substr(post('bank_account_name'), 0, 120),
         'bank_account_number' => mb_substr(post('bank_account_number'), 0, 20),
@@ -27,6 +28,7 @@ if (is_post()) {
     if ($new['loan_monthly_rate'] <= 0 || $new['loan_monthly_rate'] > 100) $errors[] = 'Loan interest must be between 0 and 100% per 30 days.';
     if ($new['loan_late_fee_rate'] < 0 || $new['loan_late_fee_rate'] > 10) $errors[] = 'Late penalty must be between 0 and 10% per day.';
     if ($new['savings_daily_rate'] < 0 || $new['savings_daily_rate'] > 5) $errors[] = 'Savings interest must be between 0 and 5% per day.';
+    if ($new['auto_payout_daily_limit'] < 0) $errors[] = 'The instant withdrawal limit cannot be negative (use 0 for no limit).';
     if ($new['min_deposit'] < 1 || $new['min_withdrawal'] < 1) $errors[] = 'Minimum deposit and withdrawal must be at least 1.';
     if (!$tenures) $errors[] = 'Allow at least one loan term.';
     if (!$new['manual_deposits'] && !($new['flw_deposits'] && flw_configured())) $errors[] = 'Keep at least one way for customers to pay in.';
@@ -105,6 +107,7 @@ app_header('Settings', 'settings', 'admin');
         <label class="check"><input type="checkbox" name="flw_deposits" value="1" <?= $on('flw_deposits') ?>><span class="small">Customers can pay deposits and repayments online (card, transfer, USSD)</span></label>
         <label class="check"><input type="checkbox" name="flw_payouts" value="1" <?= $on('flw_payouts') ?>><span class="small">Pay withdrawals through Flutterwave when staff press Send</span></label>
         <label class="check"><input type="checkbox" name="auto_payouts" value="1" <?= $on('auto_payouts') ?>><span class="small"><strong>Instant withdrawals:</strong> send them as soon as the customer asks, with no staff check</span></label>
+        <label>Instant limit per customer per day <span class="hint">Above this, or within 24 hours of a payout account change, staff approve. 0 = no limit</span><input type="number" name="auto_payout_daily_limit" min="0" step="1000" value="<?= setting('auto_payout_daily_limit') ?>"></label>
         <label>Webhook URL <span class="hint">Flutterwave dashboard → Settings → Webhooks</span><input readonly value="<?= e(absolute_url('flw_webhook.php')) ?>" onclick="this.select()"></label>
       </div>
     </div>

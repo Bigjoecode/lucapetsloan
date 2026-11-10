@@ -73,6 +73,12 @@ if (is_post()) {
                 $pdo->rollBack();
                 throw $e;
             }
+            $hold = auto_payout_hold($uid, $txId);
+            if ($hold !== null) {
+                notify_staff('payments', 'Withdrawal to check', $u['full_name'] . ' asked to withdraw ' . money($amount) . '. Not sent automatically: ' . $hold . '.', 'admin/payments.php?type=withdrawal');
+                flash('success', 'Withdrawal request for ' . money($amount) . ' sent. For your safety a member of staff will check it first; we pay within 24 hours.');
+                redirect($back);
+            }
             if (setting('auto_payouts') && flw_payouts_on()) {
                 try {
                     flw_send_withdrawal($txId, null);

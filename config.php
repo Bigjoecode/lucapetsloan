@@ -49,6 +49,7 @@ const SETTING_DEFAULTS = [
     'flw_deposits'         => 1,        // pay online through Flutterwave (needs FLW_SECRET_KEY)
     'flw_payouts'          => 1,        // send approved withdrawals through Flutterwave
     'auto_payouts'         => 1,        // send withdrawals instantly through Flutterwave, without staff approval
+    'auto_payout_daily_limit' => 50000, // per customer per day; above it (or 0 = no limit) staff approve
     'bank_name'            => 'Your Bank Plc',
     'bank_account_name'    => 'LucaPet Loan Ltd',
     'bank_account_number'  => '0123456789',
