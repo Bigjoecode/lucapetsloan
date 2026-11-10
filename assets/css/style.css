@@ -259,3 +259,8 @@ dialog::backdrop { background: rgba(10, 30, 22, .45); }
   .auth-card { padding: 1.4rem; }
   .pub-nav .btn-ghost { display: none; }
 }
+
+/* "Other ways to pay" under the online payment button */
+.pay-alt { margin-top: 1rem; border-top: 1px solid var(--line, #e5e7eb); padding-top: .8rem; }
+.pay-alt summary { cursor: pointer; font-size: .88rem; font-weight: 600; color: var(--muted, #6b7280); }
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .35rem .9rem; margin: .4rem 0 .8rem; }

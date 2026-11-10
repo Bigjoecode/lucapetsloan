@@ -1,27 +1,28 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-$admin = require_admin();
+$admin = require_staff('customers');
 
 if (is_post()) {
     verify_csrf();
     $uid = (int)post('user_id');
-    if ($uid === (int)$admin['id']) {
+    $target = q_one('SELECT * FROM users WHERE id = ?', [$uid]);
+    if (!$target || $uid === (int)$admin['id']) {
         flash('error', 'You cannot change your own account here.');
+    } elseif (is_staff($target) && !is_super($admin)) {
+        flash('error', 'Only a super admin can change staff accounts.');
     } elseif (post('action') === 'toggle_status') {
         q('UPDATE users SET status = IF(status = "active", "suspended", "active") WHERE id = ?', [$uid]);
+        audit($target['status'] === 'active' ? 'customer.suspend' : 'customer.activate', 'User #' . $uid, $target['full_name']);
         flash('success', 'Account status updated.');
     } elseif (post('action') === 'reset_link') {
-        $target = q_one('SELECT full_name, phone FROM users WHERE id = ?', [$uid]);
         if ($target) {
+            audit('customer.reset_link', 'User #' . $uid, $target['full_name']);
             // Shown to staff once, to send the customer by SMS or WhatsApp after confirming who they are.
             $_SESSION['reset_link'] = [
                 'name' => $target['full_name'], 'phone' => $target['phone'],
                 'url'  => absolute_url('reset_password.php?token=' . create_reset_token($uid, 24 * 60)),
             ];
         }
-    } elseif (post('action') === 'toggle_admin') {
-        q('UPDATE users SET role = IF(role = "admin", "customer", "admin") WHERE id = ?', [$uid]);
-        flash('success', 'Role updated.');
     }
     redirect('admin/users.php?' . http_build_query(['s' => $_GET['s'] ?? '']));
 }
@@ -62,19 +63,18 @@ app_header('Customers', 'users', 'admin');
     <tbody>
       <?php foreach ($rows as $r): ?>
         <tr>
-          <td><strong><?= e($r['full_name']) ?></strong> <?= $r['role'] === 'admin' ? '<span class="badge badge-info">admin</span>' : '' ?> <?= $r['status'] === 'suspended' ? badge('suspended') : '' ?></td>
+          <td><strong><?= e($r['full_name']) ?></strong> <?= is_staff($r) ? '<span class="badge badge-info">' . e(label($r['role'])) . '</span>' : '' ?> <?= $r['status'] === 'suspended' ? badge('suspended') : '' ?></td>
           <td class="small"><?= e($r['phone']) ?><div class="muted"><?= e($r['email']) ?></div></td>
           <td><?php if ($r['kyc_status'] !== 'none'): ?><a href="kyc.php?id=<?= $r['id'] ?>"><?= badge($r['kyc_status']) ?></a><?php else: ?><?= badge('none') ?><?php endif; ?></td>
           <td class="num"><?= money($r['savings']) ?></td>
           <td><?= $r['last_loan'] ? badge($r['last_loan']) : '<span class="muted small">—</span>' ?></td>
           <td class="muted small"><?= fdate($r['created_at']) ?></td>
           <td class="right">
-            <?php if ((int)$r['id'] !== (int)$admin['id']): ?>
+            <?php if ((int)$r['id'] !== (int)$admin['id'] && (!is_staff($r) || is_super($admin))): ?>
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end">
               <?= csrf_field() ?><input type="hidden" name="user_id" value="<?= $r['id'] ?>">
               <button class="btn btn-ghost btn-sm" name="action" value="toggle_status" data-confirm="<?= $r['status'] === 'active' ? 'Suspend' : 'Reactivate' ?> this account?"><?= $r['status'] === 'active' ? 'Suspend' : 'Activate' ?></button>
               <button class="btn btn-ghost btn-sm" name="action" value="reset_link" data-confirm="Create a password reset link for this customer? Only send it after confirming it's really them.">Reset link</button>
-              <button class="btn btn-ghost btn-sm" name="action" value="toggle_admin" data-confirm="Change this user's staff access?"><?= $r['role'] === 'admin' ? 'Remove admin' : 'Make admin' ?></button>
             </form>
             <?php endif; ?>
           </td>

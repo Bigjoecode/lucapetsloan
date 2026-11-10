@@ -5,7 +5,7 @@ $u = require_login();
 $rows = q('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50', [$u['id']])->fetchAll();
 q('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0', [$u['id']]);
 
-$area = ($u['role'] === 'admin' && !empty($_SERVER['HTTP_REFERER']) && str_contains($_SERVER['HTTP_REFERER'], '/admin/')) ? 'admin' : 'app';
+$area = (is_staff($u) && !empty($_SERVER['HTTP_REFERER']) && str_contains($_SERVER['HTTP_REFERER'], '/admin/')) ? 'admin' : 'app';
 app_header('Notifications', '', $area);
 ?>
 <h1 class="mobile-title">Notifications</h1>

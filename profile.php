@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/includes/bootstrap.php';
 $u = require_login();
+$kyc = q_one('SELECT bank_name, bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$u['id']]);
+$banks = $kyc && flw_configured() ? flw_banks() : [];
 
 if (is_post()) {
     verify_csrf();
@@ -14,6 +16,27 @@ if (is_post()) {
         } else {
             q('UPDATE users SET phone = ?, email = ? WHERE id = ?', [$phone, $email, $u['id']]);
             flash('success', 'Contact details updated.');
+        }
+    } elseif (post('action') === 'payout' && $banks) {
+        $code = (string)post('bank_code');
+        $number = (string)post('account_number');
+        if (!password_verify((string)post('current'), $u['password_hash'])) {
+            flash('error', 'Current password is incorrect.');
+        } elseif (!isset($banks[$code]) || !preg_match('/^\d{10}$/', $number)) {
+            flash('error', 'Choose your bank and enter your 10-digit account number.');
+        } elseif (!($name = flw_resolve_account($number, $code))) {
+            flash('error', "We couldn't confirm that account with the bank. Check the number and bank.");
+        } else {
+            // Payouts only go to the customer's own account: the bank's name must share a name with theirs.
+            $words = fn($s) => array_filter(preg_split('/[^a-z]+/', strtolower($s)), fn($w) => strlen($w) >= 3);
+            if (!array_intersect($words($name), $words($u['full_name']))) {
+                flash('error', 'That account belongs to ' . $name . '. Withdrawals can only go to an account in your own name.');
+            } else {
+                q('UPDATE kyc SET bank_code = ?, bank_name = ?, account_number = ?, account_name = ? WHERE user_id = ?', [$code, $banks[$code], $number, $name, $u['id']]);
+                audit('customer.payout_account', 'Customer #' . $u['id'], $banks[$code] . ' ' . $number . ' (' . $name . ')');
+                notify((int)$u['id'], 'Payout account changed', 'Withdrawals now go to ' . $banks[$code] . ' ' . $number . '. If this was not you, call ' . SUPPORT_PHONE . '.');
+                flash('success', 'Payout account saved: ' . $name . '.');
+            }
         }
     } elseif (post('action') === 'password') {
         if (!password_verify((string)post('current'), $u['password_hash'])) {
@@ -58,6 +81,21 @@ app_header('Profile', 'profile');
     </form>
   </div>
 </div>
+<?php if ($banks): ?>
+<div class="card" id="payout">
+  <h2>Payout account</h2>
+  <p class="muted small">Withdrawals are sent here. <?= $kyc['bank_code'] ? 'Now: <strong>' . e($kyc['bank_name'] . ' · ' . $kyc['account_number'] . ' · ' . $kyc['account_name']) . '</strong>' : 'Choose your bank so withdrawals can be paid automatically.' ?></p>
+  <form method="post" class="form">
+    <?= csrf_field() ?><input type="hidden" name="action" value="payout">
+    <div class="form-grid">
+      <label>Bank<select name="bank_code" required><option value="">Choose your bank</option><?php foreach ($banks as $code => $name): ?><option value="<?= e($code) ?>" <?= $kyc['bank_code'] === (string)$code ? 'selected' : '' ?>><?= e($name) ?></option><?php endforeach; ?></select></label>
+      <label>Account number<input name="account_number" inputmode="numeric" pattern="\d{10}" maxlength="10" required value="<?= e($kyc['account_number']) ?>"></label>
+    </div>
+    <label>Current password <span class="hint">To protect your money</span><input type="password" name="current" required autocomplete="current-password"></label>
+    <button class="btn btn-primary">Save payout account</button>
+  </form>
+</div>
+<?php endif; ?>
 <div class="card row between">
   <span class="muted small">Help: <?= e(SUPPORT_PHONE) ?> · <?= e(SUPPORT_EMAIL) ?></span>
   <a class="btn btn-ghost btn-sm" href="<?= url('logout.php') ?>"><?= icon('logout', 16) ?> Sign out</a>

@@ -43,15 +43,15 @@ if (is_post()) {
             run_schema();
             if (!(int)q_val('SELECT COUNT(*) FROM loan_products')) {
                 $ins = db()->prepare('INSERT INTO loan_products (name, description, min_amount, max_amount, interest_rate, min_tenure, max_tenure, late_fee_rate) VALUES (?,?,?,?,?,?,?,?)');
-                $terms = [LOAN_MONTHLY_RATE, min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS), LOAN_LATE_FEE_RATE];
-                $ins->execute(['Quick Cash', 'Small emergency loan, repaid in 30 or 60 days.', 5000, 50000, ...$terms]);
+                $terms = [setting('loan_monthly_rate'), min(loan_tenures()), max(loan_tenures()), setting('loan_late_fee_rate')];
+                $ins->execute(['Quick Cash', 'Small emergency loan, repaid in ' . tenure_choices() . '.', 5000, 50000, ...$terms]);
                 $ins->execute(['Trader Boost', 'Working capital for market traders and small shops.', 50000, 500000, ...$terms]);
                 $ins->execute(['Business Growth', 'Bigger loans for established businesses with strong savings history.', 300000, 2000000, ...$terms]);
             }
             if (q_one('SELECT id FROM users WHERE email = ? OR phone = ?', [$email, $phone])) {
-                q('UPDATE users SET role = "admin" WHERE email = ? OR phone = ?', [$email, $phone]);
+                q('UPDATE users SET role = "super_admin", permissions = NULL WHERE email = ? OR phone = ?', [$email, $phone]);
             } else {
-                q('INSERT INTO users (full_name, email, phone, password_hash, role, kyc_status) VALUES (?,?,?,?, "admin", "verified")',
+                q('INSERT INTO users (full_name, email, phone, password_hash, role, kyc_status) VALUES (?,?,?,?, "super_admin", "verified")',
                     [$name, $email, $phone, password_hash($pass, PASSWORD_DEFAULT)]);
             }
             @file_put_contents(__DIR__ . '/install.lock', date('c'));   // read-only on Vercel; the admin row marks the install there
@@ -68,7 +68,7 @@ public_header('Install');
   <div class="auth-card">
     <?php if ($done): ?>
       <h1>Installed ✓</h1>
-      <p class="muted">The database is ready, three starter loan products were added, and your admin account was created.</p>
+      <p class="muted">The database is ready, three starter loan products were added, and your super admin account was created.</p>
       <a class="btn btn-primary btn-block" href="<?= url('login.php') ?>">Sign in as admin</a>
     <?php else: ?>
       <h1>Set up <?= e(APP_NAME) ?></h1>

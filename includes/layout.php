@@ -82,7 +82,7 @@ function html_head(string $title, array $extraCss = []): void
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=1">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=2">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>
@@ -101,7 +101,7 @@ function public_header(string $title): void
     <a class="brand" href="<?= url('index.php') ?>"><?= brand_mark() ?></a>
     <nav>
       <?php if ($u): ?>
-        <a class="btn btn-primary btn-sm" href="<?= url($u['role'] === 'admin' ? 'admin/index.php' : 'dashboard.php') ?>">Open app</a>
+        <a class="btn btn-primary btn-sm" href="<?= url(home_for($u)) ?>">Open app</a>
       <?php else: ?>
         <a class="btn btn-ghost btn-sm" href="<?= url('login.php') ?>">Sign in</a>
         <a class="btn btn-primary btn-sm" href="<?= url('register.php') ?>">Create account</a>
@@ -122,7 +122,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=3"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
 </body>
 </html>
 <?php
@@ -134,15 +134,18 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
     $u = current_user();
     html_head($title);
     if ($area === 'admin') {
-        $nav = [
+        $nav = array_filter([
             'dashboard' => ['admin/index.php', 'Overview', 'chart'],
-            'kyc'       => ['admin/kyc.php', 'Verifications', 'shield'],
-            'loans'     => ['admin/loans.php', 'Loans', 'loan'],
-            'payments'  => ['admin/payments.php', 'Payments', 'cash'],
-            'users'     => ['admin/users.php', 'Customers', 'users'],
-            'products'  => ['admin/products.php', 'Loan products', 'cog'],
-        ];
-        $mobile = ['dashboard', 'kyc', 'loans', 'payments', 'users'];
+            'kyc'       => can('kyc') ? ['admin/kyc.php', 'Verifications', 'shield'] : null,
+            'loans'     => can('loans') || can('waivers') ? ['admin/loans.php', 'Loans', 'loan'] : null,
+            'payments'  => can('payments') ? ['admin/payments.php', 'Payments', 'cash'] : null,
+            'users'     => can('customers') ? ['admin/users.php', 'Customers', 'users'] : null,
+            'products'  => can('products') ? ['admin/products.php', 'Loan products', 'cog'] : null,
+            'staff'     => is_super($u) ? ['admin/staff.php', 'Staff & roles', 'shield'] : null,
+            'settings'  => is_super($u) ? ['admin/settings.php', 'Settings', 'cog'] : null,
+            'audit'     => is_super($u) ? ['admin/audit.php', 'Audit log', 'list'] : null,
+        ]);
+        $mobile = array_slice(array_keys($nav), 0, 5);
     } else {
         $nav = [
             'dashboard'    => ['dashboard.php', 'Home', 'home'],
@@ -160,14 +163,14 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" href="<?= url($area === 'admin' ? 'admin/index.php' : 'dashboard.php') ?>"><?= brand_mark() ?></a>
-    <?php if ($area === 'admin'): ?><div class="side-label">Staff console</div><?php endif; ?>
+    <?php if ($area === 'admin'): ?><div class="side-label"><?= is_super($u) ? 'Super admin' : 'Staff console' ?></div><?php endif; ?>
     <nav class="side-nav">
       <?php foreach ($nav as $key => [$href, $text, $ic]): ?>
         <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic) ?><span><?= e($text) ?></span></a>
       <?php endforeach; ?>
     </nav>
     <div class="side-foot">
-      <?php if ($u['role'] === 'admin'): ?>
+      <?php if (is_staff($u)): ?>
         <a href="<?= url($area === 'admin' ? 'dashboard.php' : 'admin/index.php') ?>" class="side-switch"><?= icon('arrow', 16) ?><?= $area === 'admin' ? 'Customer view' : 'Staff console' ?></a>
       <?php endif; ?>
       <a href="<?= url('logout.php') ?>"><?= icon('logout') ?><span>Sign out</span></a>
@@ -203,7 +206,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=3"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
 </body>
 </html>
 <?php

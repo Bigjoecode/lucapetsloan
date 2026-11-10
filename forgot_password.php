@@ -28,10 +28,8 @@ if (is_post()) {
                 . '<p>If you didn\'t ask for this, you can ignore this email; your password stays the same.</p>');
             if (!$mailed) {
                 // No email service: staff confirm it's really the customer, then send them a link.
-                foreach (q('SELECT id FROM users WHERE role = "admin"')->fetchAll() as $a) {
-                    notify((int)$a['id'], 'Password reset requested', $user['full_name'] . ' (' . $user['phone'] . ') asked to reset their password.',
-                        'admin/users.php?s=' . rawurlencode($user['phone']));
-                }
+                notify_staff('customers', 'Password reset requested', $user['full_name'] . ' (' . $user['phone'] . ') asked to reset their password.',
+                    'admin/users.php?s=' . rawurlencode($user['phone']));
             }
         }
     }

@@ -8,11 +8,13 @@ $editable = in_array($u['kyc_status'], ['none', 'submitted', 'rejected'], true);
 $fields = [
     'dob', 'gender', 'marital_status', 'id_type', 'id_number', 'bvn',
     'address', 'landmark', 'city', 'lga', 'state', 'latitude', 'longitude', 'residence_type', 'years_at_address',
-    'occupation', 'employer_name', 'work_address', 'monthly_income', 'bank_name', 'account_number', 'account_name',
+    'occupation', 'employer_name', 'work_address', 'monthly_income', 'bank_name', 'bank_code', 'account_number', 'account_name',
     'nok_name', 'nok_phone', 'nok_relationship', 'guarantor_name', 'guarantor_phone', 'guarantor_address',
     'preferred_visit_date', 'preferred_visit_time', 'visit_instructions',
 ];
-$optional = ['latitude', 'longitude', 'visit_instructions'];
+$optional = ['latitude', 'longitude', 'visit_instructions', 'bank_code'];
+// With Flutterwave the customer picks their bank from a list, so payouts know the bank code.
+$banks = flw_configured() ? flw_banks() : [];
 const VISIT_TIMES = ['Morning (8am–12pm)', 'Afternoon (12pm–4pm)', 'Evening (4pm–6pm)'];
 $errors = [];
 
@@ -25,6 +27,15 @@ if (is_post() && $editable) {
             $errors[$f] = label($f) . ' is required.';
         }
     }
+    if ($banks) {
+        unset($errors['bank_name']);
+        if (isset($banks[$data['bank_code']])) {
+            $data['bank_name'] = $banks[$data['bank_code']];
+        } else {
+            $errors['bank_name'] = 'Choose your bank.';
+        }
+    }
+    $data['bank_code'] = $data['bank_code'] ?: null;
     $dob = strtotime($data['dob'] ?: 'now');
     if ($dob > strtotime('-18 years')) $errors['dob'] = 'You must be at least 18 years old.';
     if (!preg_match('/^\d{11}$/', $data['bvn'])) $errors['bvn'] = 'BVN must be 11 digits.';
@@ -76,9 +87,7 @@ if (is_post() && $editable) {
             q('INSERT INTO kyc (user_id, ' . implode(',', $cols) . ") VALUES ($ph)", [$uid, ...array_values($data)]);
         }
         q('UPDATE users SET kyc_status = "submitted" WHERE id = ?', [$uid]);
-        foreach (q('SELECT id FROM users WHERE role = "admin"')->fetchAll() as $a) {
-            notify((int)$a['id'], 'New verification to review', $u['full_name'] . ' submitted verification details.', 'admin/kyc.php?id=' . $uid);
-        }
+        notify_staff('kyc', 'New verification to review', $u['full_name'] . ' submitted verification details.', 'admin/kyc.php?id=' . $uid);
         flash('success', 'Verification submitted. We will contact you to confirm the date of your home visit.');
         redirect('verification.php');
     }
@@ -190,7 +199,11 @@ app_header('Verification', 'verification');
       <label>Employer / business name<input name="employer_name" required value="<?= $v('employer_name') ?>"></label>
       <label style="grid-column:1/-1">Work or shop address<input name="work_address" required value="<?= $v('work_address') ?>"></label>
       <label>Monthly income <?= $err('monthly_income') ?><input type="number" name="monthly_income" min="0" step="1000" required value="<?= $v('monthly_income') ?>"></label>
-      <label>Bank name<input name="bank_name" required value="<?= $v('bank_name') ?>"></label>
+      <?php if ($banks): ?>
+        <label>Bank <?= $err('bank_name') ?><select name="bank_code" required><option value="">Choose your bank</option><?php foreach ($banks as $code => $name): ?><option value="<?= e($code) ?>" <?= ($kyc['bank_code'] ?? '') === (string)$code ? 'selected' : '' ?>><?= e($name) ?></option><?php endforeach; ?></select></label>
+      <?php else: ?>
+        <label>Bank name<input name="bank_name" required value="<?= $v('bank_name') ?>"></label>
+      <?php endif; ?>
       <label>Account number <?= $err('account_number') ?><input name="account_number" inputmode="numeric" pattern="\d{10}" maxlength="10" required value="<?= $v('account_number') ?>"></label>
       <label>Account name<input name="account_name" required value="<?= $v('account_name') ?>"></label>
     </div>

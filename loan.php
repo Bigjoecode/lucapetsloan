@@ -39,12 +39,25 @@ if (is_post()) {
                 throw $e;
             }
             flash('success', money($amount) . ' paid from your savings.' . ($after['status'] === 'repaid' ? ' Your loan is fully repaid 🎉' : ''));
+        } elseif (post('source') === 'flutterwave') {
+            if (!flw_deposits_on()) throw new UserError('Online payment is not available right now.');
+            q('INSERT INTO transactions (user_id, type, amount, method, reference, loan_id) VALUES (?, "loan_repayment", ?, "flutterwave", ?, ?)',
+                [$uid, $amount, flw_reference('LPL-REP'), $loan['id']]);
+            $tx = q_one('SELECT * FROM transactions WHERE id = ?', [db()->lastInsertId()]);
+            try {
+                redirect_external(flw_checkout($tx, $u, 'Loan #' . $loan['id'] . ' repayment'));
+            } catch (UserError $e) {
+                q('UPDATE transactions SET status = "rejected", admin_note = "Payment could not start" WHERE id = ?', [$tx['id']]);
+                throw $e;
+            }
         } else {
+            if (!setting('manual_deposits')) throw new UserError('Please use the online payment option.');
             $method = post('method');
             if (!isset(payment_methods()[$method])) throw new UserError('Choose a payment method.');
             if (post('reference') === '') throw new UserError('Enter your payment reference.');
             q('INSERT INTO transactions (user_id, type, amount, method, reference, loan_id) VALUES (?, "loan_repayment", ?, ?, ?, ?)',
                 [$uid, $amount, $method, mb_substr(post('reference'), 0, 80), $loan['id']]);
+            notify_staff('payments', 'Repayment to confirm', $u['full_name'] . ' says they paid ' . money($amount) . ' on loan #' . $loan['id'] . '.', 'admin/payments.php?type=loan_repayment');
             flash('success', 'Repayment of ' . money($amount) . ' submitted. It will be applied to your loan once we confirm it.');
         }
     } catch (UserError $e) {
@@ -78,7 +91,7 @@ app_header('Loan #' . $loan['id'], 'loans');
 <?php elseif ($loan['status'] === 'rejected'): ?>
   <div class="alert alert-error">This application was declined<?= $loan['admin_note'] ? ': ' . e($loan['admin_note']) : '.' ?></div>
 <?php elseif ($s['is_overdue']): ?>
-  <div class="alert alert-error"><strong>Overdue by <?= $s['late_days'] ?> day<?= $s['late_days'] === 1 ? '' : 's' ?>.</strong> A late fee of <?= (float)$loan['late_fee_rate'] ?>% per day is being added to the unpaid balance. Please repay as soon as you can.</div>
+  <div class="alert alert-error"><strong>Overdue by <?= $s['late_days'] ?> day<?= $s['late_days'] === 1 ? '' : 's' ?>.</strong> <?= $s['penalty_stopped'] ? 'Late penalties have been stopped on this loan.' : 'A late fee of ' . (float)$loan['late_fee_rate'] . '% per day is being added to the unpaid balance.' ?> Please repay as soon as you can.</div>
 <?php elseif ($loan['status'] === 'repaid'): ?>
   <div class="alert alert-success">Fully repaid on <?= fdate($loan['closed_at']) ?>. Well done!</div>
 <?php endif; ?>
@@ -109,7 +122,7 @@ app_header('Loan #' . $loan['id'], 'loans');
       <dt>Tenure</dt><dd><?= $s['term_days'] ?> days</dd>
       <dt>Total interest at maturity</dt><dd><?= money($s['total_interest']) ?></dd>
       <dt>Total repayable</dt><dd><?= money($s['total_repayable']) ?></dd>
-      <dt>Late penalty</dt><dd><?= (float)$loan['late_fee_rate'] ?>% of unpaid balance per day<?= $s['penalty'] > 0 ? ' · now ' . money($s['penalty']) : '' ?></dd>
+      <dt>Late penalty</dt><dd><?= (float)$loan['late_fee_rate'] ?>% of unpaid balance per day<?= $s['penalty'] > 0 ? ' · now ' . money($s['penalty']) : '' ?><?= $s['penalty_waived'] > 0 ? ' · ' . money($s['penalty_waived']) . ' waived' : '' ?><?= $s['penalty_stopped'] ? ' · stopped' : '' ?></dd>
       <dt>Purpose</dt><dd><?= e($loan['purpose']) ?></dd>
       <dt>Applied</dt><dd><?= fdatetime($loan['applied_at']) ?></dd>
     </dl>
@@ -146,17 +159,32 @@ app_header('Loan #' . $loan['id'], 'loans');
         <button class="btn btn-primary" data-confirm="Pay this amount from your savings now?">Pay from savings</button>
       <?php endif; ?>
     </form>
+    <div class="stack">
+    <?php if (flw_deposits_on()): ?>
+    <form method="post" class="form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="loan_id" value="<?= $loan['id'] ?>">
+      <input type="hidden" name="source" value="flutterwave">
+      <h3>Pay online <span class="badge badge-ok">instant</span></h3>
+      <label>Amount<input type="number" name="amount" min="1" step="0.01" max="<?= $s['payoff'] ?>" value="<?= $nextDue ? round(min($s['payoff'], $nextDue['amount'] - $nextDue['covered']), 2) : $s['payoff'] ?>" required></label>
+      <button class="btn btn-primary"><?= icon('cash', 16) ?> Pay with card, transfer or USSD</button>
+      <p class="muted small" style="margin:0">Secured by Flutterwave. Applied to your loan as soon as the payment succeeds.</p>
+    </form>
+    <?php endif; ?>
+    <?php if (setting('manual_deposits')): ?>
     <form method="post" class="form">
       <?= csrf_field() ?>
       <input type="hidden" name="loan_id" value="<?= $loan['id'] ?>">
       <input type="hidden" name="source" value="external">
-      <h3>Bank transfer, card or agent</h3>
-      <div class="bank-box">Pay to <strong><?= e(BANK_ACCOUNT_NUMBER) ?></strong> · <?= e(BANK_NAME) ?> · <?= e(BANK_ACCOUNT_NAME) ?></div>
+      <h3><?= flw_deposits_on() ? 'Already paid by transfer or to an agent?' : 'Bank transfer, card or agent' ?></h3>
+      <div class="bank-box">Pay to <strong><?= e(setting('bank_account_number')) ?></strong> · <?= e(setting('bank_name')) ?> · <?= e(setting('bank_account_name')) ?></div>
       <label>Amount<input type="number" name="amount" min="1" step="0.01" value="<?= $nextDue ? round($nextDue['amount'] - $nextDue['covered'], 2) : $s['payoff'] ?>" required></label>
       <label>Method<select name="method"><?php foreach (payment_methods() as $k => $vv): ?><option value="<?= $k ?>"><?= e($vv) ?></option><?php endforeach; ?></select></label>
       <label>Payment reference<input name="reference" required maxlength="80"></label>
       <button class="btn btn-ghost">Submit repayment</button>
     </form>
+    <?php endif; ?>
+    </div>
   </div>
 </div>
 <?php endif; ?>

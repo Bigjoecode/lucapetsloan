@@ -54,7 +54,7 @@ function app_installed(): bool
         $ok = !IS_VERCEL && file_exists(__DIR__ . '/../install.lock');
         if (!$ok) {
             try {
-                $ok = (bool)q_val('SELECT 1 FROM users WHERE role = "admin" LIMIT 1');
+                $ok = (bool)q_val('SELECT 1 FROM users WHERE role IN ("admin","super_admin") LIMIT 1');
             } catch (PDOException) {
                 $ok = false;
             }
@@ -105,6 +105,13 @@ function url(string $path = ''): string
 function redirect(string $path): never
 {
     header('Location: ' . url($path));
+    exit;
+}
+
+/** Send the browser to another site, e.g. a payment page. */
+function redirect_external(string $absoluteUrl): never
+{
+    header('Location: ' . $absoluteUrl);
     exit;
 }
 
@@ -189,14 +196,135 @@ function require_login(): array
     return $u;
 }
 
-function require_admin(): array
+/* ------------------------------------------------------------------ */
+/*  Staff roles & permissions                                          */
+/* ------------------------------------------------------------------ */
+
+/** What a staff member (role "admin") can be allowed to do. A super admin can do all of it, plus staff, settings and the audit log. */
+const STAFF_PERMISSIONS = [
+    'kyc'       => 'Verifications & home visits',
+    'loans'     => 'Approve, pay out and collect loans',
+    'waivers'   => 'Waive late penalties',
+    'payments'  => 'Confirm deposits, repayments & withdrawals',
+    'customers' => 'Suspend customers & send reset links',
+    'products'  => 'Edit loan products',
+];
+
+function is_staff(?array $u): bool
+{
+    return $u && in_array($u['role'], ['admin', 'super_admin'], true);
+}
+
+function is_super(?array $u): bool
+{
+    return $u && $u['role'] === 'super_admin';
+}
+
+/** Permissions of a staff member; NULL in the database means every staff permission. */
+function staff_permissions(array $u): array
+{
+    if (is_super($u) || $u['permissions'] === null) {
+        return array_keys(STAFF_PERMISSIONS);
+    }
+    return array_values(array_intersect(array_keys(STAFF_PERMISSIONS), explode(',', $u['permissions'])));
+}
+
+function can(string $perm, ?array $u = null): bool
+{
+    $u ??= current_user();
+    return is_super($u) || (is_staff($u) && in_array($perm, staff_permissions($u), true));
+}
+
+function home_for(array $u): string
+{
+    return is_staff($u) ? 'admin/index.php' : 'dashboard.php';
+}
+
+/** Staff page guard; pass a permission to require it as well. */
+function require_staff(?string $perm = null): array
 {
     $u = require_login();
-    if ($u['role'] !== 'admin') {
+    if (!is_staff($u) || ($perm !== null && !can($perm, $u))) {
         http_response_code(403);
-        exit('Admins only.');
+        exit("You don't have access to this page.");
     }
     return $u;
+}
+
+function require_super(): array
+{
+    $u = require_login();
+    if (!is_super($u)) {
+        http_response_code(403);
+        exit('Super admins only.');
+    }
+    return $u;
+}
+
+/** Notify every active staff member who handles $perm. */
+function notify_staff(string $perm, string $title, string $body = '', string $link = ''): void
+{
+    foreach (q('SELECT * FROM users WHERE role IN ("admin","super_admin") AND status = "active"')->fetchAll() as $s) {
+        if (can($perm, $s)) {
+            notify((int)$s['id'], $title, $body, $link);
+        }
+    }
+}
+
+/** Record who did what. $actorId NULL means the system (e.g. a payment webhook). */
+function audit(string $action, string $target = '', string $details = '', ?int $actorId = -1): void
+{
+    if ($actorId === -1) {
+        $actorId = current_user()['id'] ?? null;
+    }
+    q('INSERT INTO audit_log (actor_id, action, target, details, ip) VALUES (?,?,?,?,?)',
+        [$actorId, $action, mb_substr($target, 0, 80), mb_substr($details, 0, 500), mb_substr((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Settings                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A business setting: the super admin's saved value, else an environment
+ * variable of the same name in capitals (e.g. BANK_NAME), else the default
+ * from SETTING_DEFAULTS. Typed like the default.
+ */
+function setting(string $key)
+{
+    static $saved = null;
+    if ($saved === null) {
+        try {
+            $saved = q('SELECT k, v FROM settings')->fetchAll(PDO::FETCH_KEY_PAIR);
+        } catch (PDOException) {
+            $saved = [];   // table not created yet
+        }
+    }
+    if ($key === '__reset') {
+        $saved = null;
+        return null;
+    }
+    $default = SETTING_DEFAULTS[$key];
+    $v = $saved[$key] ?? env(strtoupper($key), $default);
+    return match (true) {
+        is_float($default) => (float)$v,
+        is_int($default)   => (int)$v,
+        default            => (string)$v,
+    };
+}
+
+function save_setting(string $key, $value): void
+{
+    q('REPLACE INTO settings (k, v) VALUES (?, ?)', [$key, (string)$value]);
+    setting('__reset');
+}
+
+/** Allowed loan terms in 30-day months, e.g. [1, 2] for 30 or 60 days. */
+function loan_tenures(): array
+{
+    $t = array_values(array_unique(array_filter(array_map('intval', explode(',', setting('loan_tenures'))))));
+    sort($t);
+    return $t ?: [1];
 }
 
 function login_user(array $user): void
@@ -251,7 +379,7 @@ function badge(string $status): string
         'none' => 'muted', 'submitted' => 'info', 'visit_scheduled' => 'warn', 'verified' => 'ok', 'rejected' => 'bad',
         'pending' => 'warn', 'approved' => 'info', 'active' => 'ok', 'overdue' => 'bad', 'repaid' => 'ok',
         'defaulted' => 'bad', 'completed' => 'ok', 'closed' => 'muted', 'suspended' => 'bad', 'paid' => 'ok',
-        'partial' => 'warn', 'upcoming' => 'muted',
+        'partial' => 'warn', 'upcoming' => 'muted', 'processing' => 'info',
     ];
     $cls = $map[$status] ?? 'muted';
     $text = $status === 'none' ? 'Not started' : label($status);
@@ -333,20 +461,30 @@ function run_schema(): void
         'ALTER TABLE savings_plans ADD COLUMN interest_earned DECIMAL(14,2) NOT NULL DEFAULT 0',
         'ALTER TABLE savings_plans ADD COLUMN interest_accrued_on DATE NULL',
         "ALTER TABLE transactions MODIFY type ENUM('deposit','withdrawal','loan_disbursement','loan_repayment','interest') NOT NULL",
+        "ALTER TABLE users MODIFY role ENUM('customer','admin','super_admin') NOT NULL DEFAULT 'customer'",
+        'ALTER TABLE users ADD COLUMN permissions VARCHAR(255) NULL',
+        'ALTER TABLE kyc ADD COLUMN bank_code VARCHAR(20) NULL',
+        'ALTER TABLE loans ADD COLUMN penalty_waived DECIMAL(14,2) NOT NULL DEFAULT 0',
+        'ALTER TABLE loans ADD COLUMN penalty_stopped_on DATE NULL',
+        "ALTER TABLE transactions MODIFY status ENUM('pending','approved','rejected','processing') NOT NULL DEFAULT 'pending'",
+        'ALTER TABLE transactions ADD COLUMN provider_ref VARCHAR(80) NULL',
+        'ALTER TABLE transactions ADD INDEX idx_tx_reference (reference)',
     ];
     foreach ($migrations as $sql) {
         try {
             db()->exec($sql);
         } catch (PDOException $e) {
-            if (($e->errorInfo[1] ?? 0) !== 1060) {   // 1060: column already exists
+            if (!in_array($e->errorInfo[1] ?? 0, [1060, 1061], true)) {   // column / index already exists
                 throw $e;
             }
         }
     }
+    // The first admin of an older install becomes the super admin.
+    if (!q_val('SELECT id FROM users WHERE role = "super_admin" LIMIT 1') && ($first = q_val('SELECT MIN(id) FROM users WHERE role = "admin"'))) {
+        q('UPDATE users SET role = "super_admin" WHERE id = ?', [$first]);
+    }
     // Savings that were already in a plan start earning from today.
     q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE interest_accrued_on IS NULL AND balance > 0');
-    q('UPDATE loan_products SET interest_rate = ?, late_fee_rate = ?, min_tenure = ?, max_tenure = ?',
-        [LOAN_MONTHLY_RATE, LOAN_LATE_FEE_RATE, min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS)]);
 }
 
 /** Remove a stored document (database reference or a legacy file in uploads/). */
@@ -426,7 +564,7 @@ function plan_streak(int $planId): int
 }
 
 /**
- * Credit a plan's savings interest (SAVINGS_DAILY_RATE per day, compounded
+ * Credit a plan's savings interest (setting('savings_daily_rate') per day, compounded
  * daily) for every full day since it was last credited. Call it before any
  * change to the plan's balance so each day earns on the right amount.
  * Returns the interest credited.
@@ -449,12 +587,12 @@ function accrue_plan_interest(int $planId): float
             if ($balance <= 0 || !$from) {
                 q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE id = ?', [$planId]);
             } elseif ($days > 0) {
-                $credited = round($balance * ((1 + SAVINGS_DAILY_RATE / 100) ** $days - 1), 2);
+                $credited = round($balance * ((1 + setting('savings_daily_rate') / 100) ** $days - 1), 2);
                 if ($credited >= 0.01) {   // tiny balances keep counting days until they earn a kobo
                     q('UPDATE savings_plans SET balance = balance + ?, interest_earned = interest_earned + ?, interest_accrued_on = CURDATE() WHERE id = ?',
                         [$credited, $credited, $planId]);
                     q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, note, processed_at) VALUES (?, "interest", ?, "system", "approved", ?, ?, NOW())',
-                        [$plan['user_id'], $credited, $planId, $days . ' day' . ($days === 1 ? '' : 's') . ' at ' . SAVINGS_DAILY_RATE . '% daily']);
+                        [$plan['user_id'], $credited, $planId, $days . ' day' . ($days === 1 ? '' : 's') . ' at ' . setting('savings_daily_rate') . '% daily']);
                 } else {
                     $credited = 0.0;
                 }
@@ -489,6 +627,14 @@ function tenure_label(int $months): string
     return ($months * DAYS_PER_MONTH) . ' days';
 }
 
+/** e.g. "30 or 60 days" */
+function tenure_choices(): string
+{
+    $d = array_map(fn($m) => $m * DAYS_PER_MONTH, loan_tenures());
+    $last = array_pop($d);
+    return ($d ? implode(', ', $d) . ' or ' : '') . $last . ' days';
+}
+
 /**
  * Live picture of a loan. Interest is simple interest at the product's monthly
  * rate, accrued daily from disbursement and capped at the loan term. After the
@@ -520,6 +666,9 @@ function loan_snapshot(array $loan, ?string $asOf = null): array
         'accrued_interest' => 0.0,
         'late_days'        => 0,
         'penalty'          => 0.0,
+        'penalty_raw'      => 0.0,
+        'penalty_waived'   => 0.0,
+        'penalty_stopped'  => !empty($loan['penalty_stopped_on']),
         'payoff'           => $P,
         'balance_at_maturity' => $totalRepayable,
         'progress'         => 0,
@@ -539,10 +688,17 @@ function loan_snapshot(array $loan, ?string $asOf = null): array
     $days = max(0, (int)$start->diff($end)->format('%r%a'));
     $due = new DateTimeImmutable($loan['due_date']);
     $lateDays = max(0, (int)$due->diff($end)->format('%r%a'));
+    // Staff can stop the penalty clock; days after that add nothing.
+    $penaltyEnd = !empty($loan['penalty_stopped_on']) ? min($end, new DateTimeImmutable($loan['penalty_stopped_on'])) : $end;
+    $penaltyDays = max(0, (int)$due->diff($penaltyEnd)->format('%r%a'));
 
     $accrued = round($daily * min($days, $termDays), 2);
     $unpaid = max(0, $totalRepayable - $paid);
-    $penalty = round($unpaid * ((float)$loan['late_fee_rate'] / 100) * $lateDays, 2);
+    $rawPenalty = round($unpaid * ((float)$loan['late_fee_rate'] / 100) * $penaltyDays, 2);
+    $waived = min($rawPenalty, (float)($loan['penalty_waived'] ?? 0));
+    $penalty = round($rawPenalty - $waived, 2);
+    $s['penalty_raw'] = $rawPenalty;
+    $s['penalty_waived'] = $waived;
 
     $s['days_elapsed'] = $days;
     $s['days_left'] = max(0, $termDays - $days);
@@ -660,7 +816,7 @@ function apply_loan_payment(int $loanId, float $amount): array
 /*  Admin: approve / reject pending money movements                    */
 /* ------------------------------------------------------------------ */
 
-function process_transaction(int $txId, bool $approve, int $adminId, string $note = ''): string
+function process_transaction(int $txId, bool $approve, ?int $adminId, string $note = ''): string
 {
     $pdo = db();
     $pdo->beginTransaction();

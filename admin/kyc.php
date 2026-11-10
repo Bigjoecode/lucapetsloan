@@ -1,6 +1,6 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-$admin = require_admin();
+$admin = require_staff('kyc');
 
 $id = (int)($_GET['id'] ?? 0);
 
@@ -25,6 +25,7 @@ if (is_post()) {
             q('UPDATE kyc SET visit_date = ?, visit_time = ?, officer_name = ?, officer_phone = ?, rejection_reason = NULL WHERE user_id = ?',
                 [$date, mb_substr($time, 0, 20), mb_substr($officer, 0, 120), mb_substr(post('officer_phone'), 0, 30), $uid]);
             q('UPDATE users SET kyc_status = "visit_scheduled" WHERE id = ?', [$uid]);
+            audit('kyc.schedule_visit', 'User #' . $uid, $date . ' ' . $time . ' · ' . $officer);
             notify($uid, 'Home visit scheduled', 'Officer ' . $officer . ' will visit on ' . fdate($date, 'D, M j') . ' (' . $time . ').', 'verification.php');
             flash('success', 'Visit scheduled and the customer has been notified.');
         }
@@ -36,6 +37,7 @@ if (is_post()) {
         if ($result === 'verified') {
             q('UPDATE kyc SET visit_notes = ?, reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL WHERE user_id = ?', [$fullNotes, $admin['id'], $uid]);
             q('UPDATE users SET kyc_status = "verified" WHERE id = ?', [$uid]);
+            audit('kyc.verify', 'User #' . $uid, $cust['full_name']);
             notify($uid, 'You are verified ✅', 'Your home visit is complete. You can now apply for a loan.', 'loans.php#apply');
             flash('success', $cust['full_name'] . ' is now verified.');
         } elseif ($result === 'rejected') {
@@ -46,6 +48,7 @@ if (is_post()) {
             }
             q('UPDATE kyc SET visit_notes = ?, rejection_reason = ?, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?', [$fullNotes, $reason, $admin['id'], $uid]);
             q('UPDATE users SET kyc_status = "rejected" WHERE id = ?', [$uid]);
+            audit('kyc.reject', 'User #' . $uid, $reason);
             notify($uid, 'Verification not approved', $reason, 'verification.php');
             flash('success', 'Verification rejected and the customer has been notified.');
         }

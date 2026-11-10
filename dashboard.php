@@ -10,7 +10,7 @@ $interestEarned = array_sum(array_map(fn($p) => (float)$p['interest_earned'], $p
 $loan = has_open_loan($uid);
 $snap = $loan ? loan_snapshot($loan) : null;
 $recent = q('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 6', [$uid])->fetchAll();
-$pendingCount = (int)q_val('SELECT COUNT(*) FROM transactions WHERE user_id = ? AND status = "pending"', [$uid]);
+$pendingCount = (int)q_val('SELECT COUNT(*) FROM transactions WHERE user_id = ? AND status IN ("pending","processing")', [$uid]);
 $kyc = q_one('SELECT visit_date, visit_time, officer_name, officer_phone, rejection_reason FROM kyc WHERE user_id = ?', [$uid]);
 $today = date('Y-m-d');
 
@@ -43,7 +43,7 @@ app_header('Home', 'dashboard');
       <span class="k"><?= icon('piggy', 16) ?> Total savings</span>
       <span class="v"><?= money($totalSavings) ?></span>
       <span class="s"><?php if ($bestStreak): ?>🔥 <?= $bestStreak ?>-day saving streak<?php else: ?>Make your first deposit today<?php endif; ?><?= $pendingCount ? ' · ' . $pendingCount . ' pending' : '' ?></span>
-      <span class="s"><?= icon('chart', 14) ?> <?= money($interestEarned) ?> interest earned · <?= SAVINGS_DAILY_RATE ?>% daily</span>
+      <span class="s"><?= icon('chart', 14) ?> <?= money($interestEarned) ?> interest earned · <?= setting('savings_daily_rate') ?>% daily</span>
     </div>
     <div class="row">
       <button class="btn btn-accent btn-sm" data-open="dlg-deposit"><?= icon('plus', 16) ?> Save today</button>

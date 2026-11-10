@@ -1,26 +1,29 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-require_admin();
+require_staff('products');
 
 if (is_post()) {
     verify_csrf();
     $pid = (int)post('id');
     if (post('action') === 'toggle') {
         q('UPDATE loan_products SET is_active = 1 - is_active WHERE id = ?', [$pid]);
+        audit('product.toggle', 'Product #' . $pid);
         flash('success', 'Product updated.');
     } else {
         $d = [
             mb_substr(post('name'), 0, 80), mb_substr(post('description'), 0, 255),
-            (float)post('min_amount'), (float)post('max_amount'), LOAN_MONTHLY_RATE,
-            min(LOAN_TENURE_MONTHS), max(LOAN_TENURE_MONTHS), LOAN_LATE_FEE_RATE,
+            (float)post('min_amount'), (float)post('max_amount'), setting('loan_monthly_rate'),
+            min(loan_tenures()), max(loan_tenures()), setting('loan_late_fee_rate'),
         ];
         if ($d[0] === '' || $d[2] <= 0 || $d[3] < $d[2]) {
             flash('error', 'Check the values: name is required and max must be at least min.');
         } elseif ($pid) {
             q('UPDATE loan_products SET name=?, description=?, min_amount=?, max_amount=?, interest_rate=?, min_tenure=?, max_tenure=?, late_fee_rate=? WHERE id = ?', [...$d, $pid]);
+            audit('product.update', 'Product #' . $pid, $d[0] . ' ' . money0($d[2]) . '–' . money0($d[3]));
             flash('success', 'Product saved.');
         } else {
             q('INSERT INTO loan_products (name, description, min_amount, max_amount, interest_rate, min_tenure, max_tenure, late_fee_rate) VALUES (?,?,?,?,?,?,?,?)', $d);
+            audit('product.create', $d[0], money0($d[2]) . '–' . money0($d[3]));
             flash('success', 'Product created.');
         }
     }
@@ -37,7 +40,7 @@ app_header('Loan products', 'products', 'admin');
 <div class="grid grid-2" style="align-items:start">
   <div class="card">
     <h2>Products</h2>
-    <p class="muted small">Every product uses the same terms: <?= LOAN_MONTHLY_RATE ?>% interest per 30 days, repaid in 30 or 60 days, with a <?= LOAN_LATE_FEE_RATE ?>% daily penalty on the unpaid balance after the due date. Products set the amount range.</p>
+    <p class="muted small">Every product uses the same terms: <?= setting('loan_monthly_rate') ?>% interest per 30 days, repaid in <?= tenure_choices() ?>, with a <?= setting('loan_late_fee_rate') ?>% daily penalty on the unpaid balance after the due date. Products set the amount range.</p>
     <ul class="list">
       <?php foreach ($products as $p): ?>
         <li>

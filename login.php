@@ -2,7 +2,7 @@
 require __DIR__ . '/includes/bootstrap.php';
 
 if ($u = current_user()) {
-    redirect($u['role'] === 'admin' ? 'admin/index.php' : 'dashboard.php');
+    redirect(home_for($u));
 }
 
 $error = '';
@@ -23,7 +23,7 @@ if (is_post()) {
             } else {
                 unset($_SESSION['login_fails']);
                 login_user($user);
-                redirect($user['role'] === 'admin' ? 'admin/index.php' : 'dashboard.php');
+                redirect(home_for($user));
             }
         } else {
             $_SESSION['login_fails'] = ['n' => $fails['n'] + 1, 't' => time()];

@@ -16,7 +16,11 @@ The app runs on Vercel through the community PHP runtime (`vercel-php`, see `ver
 - **Logins** are stored in the `sessions` table, and **verification documents** in the `documents` table. Both are created automatically.
 - **First admin:** set `SETUP_KEY` to a secret value, then open `/install.php` on the live site and enter it. Once an admin exists, the installer is locked.
 
-Optional environment variables: `APP_NAME`, `BANK_NAME`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `APP_TIMEZONE`.
+Optional environment variables: `APP_NAME`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `APP_TIMEZONE`.
+
+**Roles.** The first admin is the *super admin*: they manage staff and their permissions (Staff & roles), change loan and savings rates, payment options and bank details (Settings), and read the audit log of every staff action. Other staff only see the pages their permissions allow.
+
+**Flutterwave.** Set `FLW_SECRET_KEY` (a `FLWSECK_TEST-...` key while testing) and `FLW_SECRET_HASH` (any long random string). In the Flutterwave dashboard, set the webhook URL to `https://<your-site>/flw_webhook.php` with the same secret hash. Customers can then pay deposits and repayments online, and staff can send withdrawals to customers' banks. Withdrawals need the customer's bank picked from the list (Verification or Profile → Payout account).
 
 Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (for example `LucaPet Loan <no-reply@yourdomain.com>`, on a domain verified in Resend). Without a key, reset requests notify the admins, who create a one-time link under Customers → Reset link and send it by SMS or WhatsApp.
 

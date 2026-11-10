@@ -1,6 +1,6 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-require_admin();
+require_staff();
 
 $stats = [
     'customers'   => (int)q_val('SELECT COUNT(*) FROM users WHERE role = "customer"'),

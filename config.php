@@ -36,24 +36,33 @@ define('CURRENCY', '₦');
 define('SUPPORT_PHONE', env('SUPPORT_PHONE', '+234 800 000 0000'));
 define('SUPPORT_EMAIL', env('SUPPORT_EMAIL', 'support@lucapetloan.test'));
 
-// Where customers send deposits / repayments by bank transfer
-define('BANK_NAME', env('BANK_NAME', 'Your Bank Plc'));
-define('BANK_ACCOUNT_NAME', env('BANK_ACCOUNT_NAME', 'LucaPet Loan Ltd'));
-define('BANK_ACCOUNT_NUMBER', env('BANK_ACCOUNT_NUMBER', '0123456789'));
+// Business rules. These are only the starting values: the super admin changes
+// them under Settings, and the saved values live in the settings table.
+const SETTING_DEFAULTS = [
+    'loan_monthly_rate'    => 19.8,     // percent per 30 days
+    'loan_late_fee_rate'   => 2.0,      // percent of the unpaid balance per day after the due date
+    'loan_tenures'         => '1,2',    // allowed terms in 30-day months: 30 or 60 days
+    'savings_daily_rate'   => 0.2,      // percent per day, credited to each plan daily
+    'min_deposit'          => 100,
+    'min_withdrawal'       => 500,
+    'manual_deposits'      => 1,        // customers may pay by bank transfer and enter a reference
+    'flw_deposits'         => 1,        // pay online through Flutterwave (needs FLW_SECRET_KEY)
+    'flw_payouts'          => 1,        // send approved withdrawals through Flutterwave
+    'auto_payouts'         => 0,        // send withdrawals instantly, without staff approval
+    'bank_name'            => 'Your Bank Plc',
+    'bank_account_name'    => 'LucaPet Loan Ltd',
+    'bank_account_number'  => '0123456789',
+];
 
-// Rules
-define('MIN_DEPOSIT', 100);                     // smallest daily contribution
-define('MIN_WITHDRAWAL', 500);
 // Vercel caps a whole request at 4.5 MB, so each of the 3 documents must stay small there.
 define('MAX_UPLOAD_BYTES', IS_VERCEL ? (int)(1.3 * 1024 * 1024) : 5 * 1024 * 1024);
 define('DAYS_PER_MONTH', 30);                   // interest month length
 
-// Loan terms, the same for every product
-define('LOAN_MONTHLY_RATE', 19.8);              // percent per 30 days
-define('LOAN_LATE_FEE_RATE', 2.0);              // percent of the unpaid balance per day after the due date
-define('LOAN_TENURE_MONTHS', [1, 2]);           // 30 or 60 days
-
-define('SAVINGS_DAILY_RATE', 0.2);              // percent per day, credited to each plan daily
+// Flutterwave (v3 API) for online deposits, repayments and withdrawals.
+// FLW_SECRET_HASH must match the "secret hash" set for the webhook in the Flutterwave dashboard.
+define('FLW_SECRET_KEY', env('FLW_SECRET_KEY', ''));
+define('FLW_SECRET_HASH', env('FLW_SECRET_HASH', ''));
+define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3'), '/'));
 
 // Password reset emails go out through Resend (resend.com) when a key is set;
 // without one, reset requests reach the admins, who send the customer a link.

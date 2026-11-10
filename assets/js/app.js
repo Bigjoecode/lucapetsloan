@@ -9,10 +9,8 @@
       const d = document.getElementById(b.dataset.open);
       if (!d) return;
       if (b.dataset.plan) {
-        const sel = d.querySelector('select[name=plan_id]');
-        if (sel) sel.value = b.dataset.plan;
-        const amt = d.querySelector('input[name=amount]');
-        if (amt && b.dataset.amount) amt.value = b.dataset.amount;
+        d.querySelectorAll('select[name=plan_id]').forEach((sel) => { sel.value = b.dataset.plan; });
+        if (b.dataset.amount) d.querySelectorAll('input[name=amount]').forEach((amt) => { amt.value = b.dataset.amount; });
       }
       d.showModal();
     })
@@ -35,12 +33,19 @@
     })
   );
 
+  // Staff role: permissions only matter for regular staff
+  document.querySelectorAll('select[data-role]').forEach((sel) => {
+    const grid = sel.form.querySelector('.perm-grid');
+    const sync = () => { if (grid) grid.hidden = sel.value === 'super_admin'; };
+    sel.addEventListener('change', sync); sync();
+  });
+
   // Confirm dangerous actions
   document.querySelectorAll('[data-confirm]').forEach((el) =>
     el.addEventListener('click', (e) => { if (!confirm(el.dataset.confirm)) e.preventDefault(); })
   );
 
-  // Loan calculator: form[data-calc] with product select (data-rate/min/max/tmin/tmax), amount, tenure
+  // Loan calculator: form[data-calc] with product select (data-rate/min/max/tenures), amount, tenure
   document.querySelectorAll('[data-calc]').forEach((form) => {
     const product = form.querySelector('[name=product_id]');
     const amount = form.querySelector('[name=amount]');
@@ -52,14 +57,14 @@
       const o = product.selectedOptions[0];
       if (!o) return;
       amount.min = o.dataset.min; amount.max = o.dataset.max;
-      const tmin = +o.dataset.tmin, tmax = +o.dataset.tmax, cur = +tenure.value;
+      const terms = (o.dataset.tenures || '1').split(',').map(Number), cur = +tenure.value;
       tenure.innerHTML = '';
-      for (let m = tmin; m <= tmax; m++) {
+      terms.forEach((m) => {
         const op = document.createElement('option');
         op.value = m; op.textContent = (m * 30) + ' days';
         tenure.appendChild(op);
-      }
-      tenure.value = cur >= tmin && cur <= tmax ? cur : tmin;
+      });
+      tenure.value = terms.includes(cur) ? cur : terms[0];
       const hint = form.querySelector('[data-range]');
       if (hint) hint.textContent = 'Between ' + fmt(o.dataset.min) + ' and ' + fmt(o.dataset.max);
     }

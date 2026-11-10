@@ -1,6 +1,10 @@
 <?php
 require __DIR__ . '/../includes/bootstrap.php';
-$admin = require_admin();
+$admin = require_staff();
+if (!can('loans') && !can('waivers')) {
+    http_response_code(403);
+    exit("You don't have access to this page.");
+}
 
 $id = (int)($_GET['id'] ?? 0);
 
@@ -15,6 +19,8 @@ if (is_post()) {
         if (!$loan) throw new UserError('Loan not found.');
         $uid = (int)$loan['user_id'];
         $note = mb_substr(post('note'), 0, 255);
+        if (!can($action === 'waive' ? 'waivers' : 'loans')) throw new UserError("You don't have permission to do that.");
+        $detail = $note;
 
         switch ($action) {
             case 'approve':
@@ -63,6 +69,25 @@ if (is_post()) {
                 $msg = 'Repayment recorded.';
                 break;
 
+            case 'waive':
+                if (!in_array($loan['status'], ['active', 'defaulted'], true)) throw new UserError('Only open loans have penalties to waive.');
+                $s = loan_snapshot($loan);
+                $amount = round((float)post('amount'), 2);
+                $stop = (bool)post('stop_penalty') && empty($loan['penalty_stopped_on']);
+                if ($note === '') throw new UserError('Enter the reason for the waiver.');
+                if ($amount < 0 || $amount > $s['penalty'] + 0.001) throw new UserError('You can waive up to ' . money($s['penalty']) . ', the penalty owed now.');
+                if ($amount <= 0 && !$stop) throw new UserError('Enter an amount to waive, or stop further penalties.');
+                q('UPDATE loans SET penalty_waived = penalty_waived + ?, penalty_stopped_on = IF(?, CURDATE(), penalty_stopped_on) WHERE id = ?', [$amount, (int)$stop, $lid]);
+                q('INSERT INTO loan_waivers (loan_id, amount, stopped_penalty, reason, admin_id) VALUES (?,?,?,?,?)', [$lid, $amount, (int)$stop, $note, $admin['id']]);
+                $after = loan_snapshot(q_one('SELECT * FROM loans WHERE id = ?', [$lid]));
+                if ($after['payoff'] <= 0.009) {
+                    q('UPDATE loans SET status = "repaid", closed_at = NOW() WHERE id = ?', [$lid]);
+                }
+                notify($uid, 'Late penalty waived', trim(($amount > 0 ? money($amount) . ' of late penalty was waived on loan #' . $lid . '. ' : '') . ($stop ? 'No further late penalties will be added. ' : '') . 'You now owe ' . money($after['payoff']) . '.'), 'loan.php?id=' . $lid);
+                $detail = money($amount) . ($stop ? ', penalties stopped' : '') . ' · ' . $note;
+                $msg = 'Waiver applied. The customer now owes ' . money($after['payoff']) . '.';
+                break;
+
             case 'default':
                 if ($loan['status'] !== 'active') throw new UserError('Only active loans can be marked as defaulted.');
                 q('UPDATE loans SET status = "defaulted", admin_note = ? WHERE id = ?', [$note ?: 'Marked as defaulted', $lid]);
@@ -72,6 +97,7 @@ if (is_post()) {
             default:
                 throw new UserError('Unknown action.');
         }
+        audit('loan.' . $action, 'Loan #' . $lid, $detail);
         $pdo->commit();
         flash('success', $msg);
     } catch (Throwable $e) {
@@ -94,6 +120,7 @@ if ($id) {
     $history = q('SELECT status, COUNT(*) c FROM loans WHERE user_id = ? AND id <> ? GROUP BY status', [$loan['user_id'], $id])->fetchAll(PDO::FETCH_KEY_PAIR);
     $daysSaved = (int)q_val('SELECT COUNT(DISTINCT DATE(created_at)) FROM transactions WHERE user_id = ? AND type = "deposit" AND status = "approved"', [$loan['user_id']]);
     $txs = q('SELECT * FROM transactions WHERE loan_id = ? ORDER BY id DESC', [$id])->fetchAll();
+    $waivers = q('SELECT w.*, u.full_name staff FROM loan_waivers w LEFT JOIN users u ON u.id = w.admin_id WHERE w.loan_id = ? ORDER BY w.id DESC', [$id])->fetchAll();
     $dti = $kyc && (float)$kyc['monthly_income'] > 0 ? $s['installment'] / (float)$kyc['monthly_income'] * 100 : null;
 
     app_header('Loan #' . $id, 'loans', 'admin');
@@ -108,7 +135,7 @@ if ($id) {
       <div class="card hero-card stat"><span class="k">To clear today</span><span class="v"><?= money($s['payoff']) ?></span><span class="s">Day <?= $s['days_elapsed'] ?> of <?= $s['term_days'] ?></span></div>
       <div class="card stat"><span class="k">Interest so far</span><span class="v"><?= money($s['accrued_interest']) ?></span><span class="s">+<?= money($s['daily_interest']) ?>/day</span></div>
       <div class="card stat"><span class="k">Paid</span><span class="v"><?= money($s['paid']) ?></span><span class="s">of <?= money($s['total_repayable']) ?></span></div>
-      <div class="card stat"><span class="k">Late fees</span><span class="v" style="<?= $s['penalty'] ? 'color:var(--bad)' : '' ?>"><?= money($s['penalty']) ?></span><span class="s"><?= $s['late_days'] ?> days late · due <?= fdate($loan['due_date']) ?></span></div>
+      <div class="card stat"><span class="k">Late fees</span><span class="v" style="<?= $s['penalty'] ? 'color:var(--bad)' : '' ?>"><?= money($s['penalty']) ?></span><span class="s"><?= $s['late_days'] ?> days late · due <?= fdate($loan['due_date']) ?><?= $s['penalty_waived'] > 0 ? ' · ' . money($s['penalty_waived']) . ' waived' : '' ?><?= $s['penalty_stopped'] ? ' · stopped ' . fdate($loan['penalty_stopped_on']) : '' ?></span></div>
     </div>
     <?php endif; ?>
 
@@ -147,7 +174,8 @@ if ($id) {
       </div>
 
       <div class="stack">
-        <?php if ($loan['status'] === 'pending'): ?>
+        <?php if (!can('loans')): ?>
+        <?php elseif ($loan['status'] === 'pending'): ?>
           <div class="card">
             <h2>Decision</h2>
             <?php if ($loan['kyc_status'] !== 'verified'): ?><div class="alert alert-warn">Customer is not verified. Approval is blocked until the physical visit is complete.</div><?php endif; ?>
@@ -198,6 +226,31 @@ if ($id) {
                 <button class="btn btn-danger btn-sm" data-confirm="Mark this loan as defaulted?">Mark as defaulted</button>
               </form>
             <?php endif; ?>
+          </div>
+        <?php endif; ?>
+
+        <?php if (can('waivers') && in_array($loan['status'], ['active', 'defaulted'], true) && ($s['penalty'] > 0 || ($s['is_overdue'] && !$s['penalty_stopped']))): ?>
+          <div class="card">
+            <h2>Waive late penalty</h2>
+            <p class="muted small">Penalty owed now: <strong><?= money($s['penalty']) ?></strong><?= $s['penalty_waived'] > 0 ? ' (after ' . money($s['penalty_waived']) . ' already waived)' : '' ?>. Interest and principal can't be waived here.</p>
+            <form method="post" class="form">
+              <?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $id ?>"><input type="hidden" name="action" value="waive">
+              <label>Amount to waive<input type="number" name="amount" step="0.01" min="0" max="<?= $s['penalty'] ?>" value="<?= $s['penalty'] ?>"></label>
+              <?php if (!$s['penalty_stopped']): ?>
+                <label class="check"><input type="checkbox" name="stop_penalty" value="1"><span class="small">Also stop new penalties from today</span></label>
+              <?php endif; ?>
+              <label>Reason <span class="hint">Shown in the audit log</span><input name="note" required maxlength="255" placeholder="e.g. Hospital stay, agreed repayment plan"></label>
+              <button class="btn btn-primary" data-confirm="Apply this waiver?">Apply waiver</button>
+            </form>
+          </div>
+        <?php endif; ?>
+
+        <?php if ($waivers): ?>
+          <div class="card">
+            <h2>Waivers</h2>
+            <ul class="list"><?php foreach ($waivers as $w): ?>
+              <li><div class="grow"><div class="title"><?= money($w['amount']) ?> waived<?= $w['stopped_penalty'] ? ' · penalties stopped' : '' ?></div><div class="sub"><?= e($w['reason']) ?> · <?= e($w['staff'] ?? 'Staff') ?> · <?= fdatetime($w['created_at']) ?></div></div></li>
+            <?php endforeach; ?></ul>
           </div>
         <?php endif; ?>
 

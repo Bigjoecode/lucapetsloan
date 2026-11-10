@@ -3,11 +3,11 @@ require __DIR__ . '/includes/bootstrap.php';
 
 $products = q('SELECT * FROM loan_products WHERE is_active = 1 ORDER BY min_amount')->fetchAll();
 $u = current_user();
-$appUrl = $u ? url($u['role'] === 'admin' ? 'admin/index.php' : 'dashboard.php') : url('register.php');
+$appUrl = $u ? url(home_for($u)) : url('register.php');
 
 // Sample figures for the illustrative app previews
 $demoP = 100000;
-$demoRate = LOAN_MONTHLY_RATE;
+$demoRate = setting('loan_monthly_rate');
 $demoDaily = $demoP * $demoRate / 100 / DAYS_PER_MONTH;
 
 html_head(APP_TAGLINE, ['landing.css']);
@@ -126,7 +126,7 @@ html_head(APP_TAGLINE, ['landing.css']);
           <span class="l-ic"><?= icon('chart', 18) ?></span>
           <div>
             <h3>Interest you can actually see</h3>
-            <p><?= LOAN_MONTHLY_RATE ?>% per 30 days, added daily over 30 or 60 days. Pay early and you only pay the interest built up so far.</p>
+            <p><?= setting('loan_monthly_rate') ?>% per 30 days, added daily over <?= tenure_choices() ?>. Pay early and you only pay the interest built up so far.</p>
           </div>
         </div>
         <div class="l-panel">
@@ -165,7 +165,7 @@ html_head(APP_TAGLINE, ['landing.css']);
           <span class="l-ic"><?= icon('piggy', 18) ?></span>
           <div>
             <h3>Daily savings, digitally</h3>
-            <p>Pay in by transfer, card, USSD or a field agent. Every balance earns <?= SAVINGS_DAILY_RATE ?>% interest a day while your streak grows.</p>
+            <p>Pay in by transfer, card, USSD or a field agent. Every balance earns <?= setting('savings_daily_rate') ?>% interest a day while your streak grows.</p>
           </div>
         </div>
         <div class="l-panel">
@@ -214,9 +214,9 @@ html_head(APP_TAGLINE, ['landing.css']);
             <div>
               <h3><?= e($p['name']) ?></h3>
               <p><?= e($p['description']) ?></p>
-              <code><?= money0($p['min_amount']) ?> – <?= money0($p['max_amount']) ?> · 30 or 60 days</code>
+              <code><?= money0($p['min_amount']) ?> – <?= money0($p['max_amount']) ?> · <?= tenure_choices() ?></code>
             </div>
-            <div class="l-rate"><?= LOAN_MONTHLY_RATE ?>%<small>/30 days</small></div>
+            <div class="l-rate"><?= setting('loan_monthly_rate') ?>%<small>/30 days</small></div>
           </article>
         <?php endforeach; ?>
       </div>
@@ -227,7 +227,7 @@ html_head(APP_TAGLINE, ['landing.css']);
           <label>Product
             <select name="product_id">
               <?php foreach ($products as $p): ?>
-                <option value="<?= $p['id'] ?>" data-rate="<?= LOAN_MONTHLY_RATE ?>" data-min="<?= (float)$p['min_amount'] ?>" data-max="<?= (float)$p['max_amount'] ?>" data-tmin="<?= min(LOAN_TENURE_MONTHS) ?>" data-tmax="<?= max(LOAN_TENURE_MONTHS) ?>"><?= e($p['name']) ?></option>
+                <option value="<?= $p['id'] ?>" data-rate="<?= setting('loan_monthly_rate') ?>" data-min="<?= (float)$p['min_amount'] ?>" data-max="<?= (float)$p['max_amount'] ?>" data-tenures="<?= implode(',', loan_tenures()) ?>"><?= e($p['name']) ?></option>
               <?php endforeach; ?>
             </select>
           </label>
@@ -265,11 +265,11 @@ html_head(APP_TAGLINE, ['landing.css']);
       </details>
       <details>
         <summary>How is interest calculated?</summary>
-        <p>Loans run for 30 or 60 days at <?= LOAN_MONTHLY_RATE ?>% interest per 30 days. The interest is added a little each day from the day the money reaches your account, and if you clear the loan early you only pay the interest built up so far. If the loan runs past its due date, a penalty of <?= LOAN_LATE_FEE_RATE ?>% of the unpaid balance is added every day until it is paid.</p>
+        <p>Loans run for <?= tenure_choices() ?> at <?= setting('loan_monthly_rate') ?>% interest per 30 days. The interest is added a little each day from the day the money reaches your account, and if you clear the loan early you only pay the interest built up so far. If the loan runs past its due date, a penalty of <?= setting('loan_late_fee_rate') ?>% of the unpaid balance is added every day until it is paid.</p>
       </details>
       <details>
         <summary>How do daily savings work?</summary>
-        <p>Open a plan with a daily amount, for example <?= money0(500) ?>, then pay in each day by bank transfer, card, USSD or through a field agent. Your balance goes up once the payment is confirmed, earns <?= SAVINGS_DAILY_RATE ?>% interest every day, and you can withdraw to your bank account.</p>
+        <p>Open a plan with a daily amount, for example <?= money0(500) ?>, then pay in each day by bank transfer, card, USSD or through a field agent. Your balance goes up once the payment is confirmed, earns <?= setting('savings_daily_rate') ?>% interest every day, and you can withdraw to your bank account.</p>
       </details>
       <details>
         <summary>Can I use my savings to repay my loan?</summary>
@@ -321,6 +321,6 @@ html_head(APP_TAGLINE, ['landing.css']);
   </div>
 </footer>
 
-<script src="<?= url('assets/js/app.js') ?>?v=3"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
 </body>
 </html>

@@ -9,7 +9,8 @@ return [
   email VARCHAR(160) NOT NULL UNIQUE,
   phone VARCHAR(30) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('customer','admin') NOT NULL DEFAULT 'customer',
+  role ENUM('customer','admin','super_admin') NOT NULL DEFAULT 'customer',
+  permissions VARCHAR(255) NULL COMMENT 'comma-separated staff permissions; NULL = all except super admin ones',
   kyc_status ENUM('none','submitted','visit_scheduled','verified','rejected') NOT NULL DEFAULT 'none',
   status ENUM('active','suspended') NOT NULL DEFAULT 'active',
   last_login_at DATETIME NULL,
@@ -41,6 +42,7 @@ return [
   bank_name VARCHAR(80) NOT NULL,
   account_number VARCHAR(20) NOT NULL,
   account_name VARCHAR(120) NOT NULL,
+  bank_code VARCHAR(20) NULL,
   nok_name VARCHAR(120) NOT NULL,
   nok_phone VARCHAR(30) NOT NULL,
   nok_relationship VARCHAR(40) NOT NULL,
@@ -124,6 +126,8 @@ return [
   disbursed_at DATETIME NULL,
   due_date DATE NULL,
   closed_at DATETIME NULL,
+  penalty_waived DECIMAL(14,2) NOT NULL DEFAULT 0,
+  penalty_stopped_on DATE NULL,
   INDEX (user_id), INDEX (status),
   CONSTRAINT fk_loan_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_loan_product FOREIGN KEY (product_id) REFERENCES loan_products(id)
@@ -136,7 +140,8 @@ return [
   amount DECIMAL(14,2) NOT NULL,
   method VARCHAR(30) NOT NULL,
   reference VARCHAR(80) NULL,
-  status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  status ENUM('pending','approved','rejected','processing') NOT NULL DEFAULT 'pending',
+  provider_ref VARCHAR(80) NULL COMMENT 'Flutterwave transaction or transfer id',
   savings_plan_id INT UNSIGNED NULL,
   loan_id INT UNSIGNED NULL,
   note VARCHAR(255) NULL,
@@ -169,6 +174,35 @@ return [
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (user_id),
   CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS loan_waivers (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  loan_id INT UNSIGNED NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  stopped_penalty TINYINT(1) NOT NULL DEFAULT 0,
+  reason VARCHAR(255) NOT NULL,
+  admin_id INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (loan_id),
+  CONSTRAINT fk_waiver_loan FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS settings (
+  k VARCHAR(60) PRIMARY KEY,
+  v MEDIUMTEXT NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS audit_log (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  actor_id INT UNSIGNED NULL COMMENT 'NULL = the system, e.g. a Flutterwave webhook',
+  action VARCHAR(60) NOT NULL,
+  target VARCHAR(80) NOT NULL DEFAULT '',
+  details VARCHAR(500) NOT NULL DEFAULT '',
+  ip VARCHAR(45) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (actor_id), INDEX (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
 SESSIONS_TABLE_SQL,
