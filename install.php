@@ -6,10 +6,19 @@ require __DIR__ . '/includes/bootstrap.php';
 if (app_installed()) {
     // Safe to re-run: creates any tables added since the first install, never touches data.
     try {
-        run_schema();
-    } catch (Throwable) {
+        $problems = run_schema();
+    } catch (Throwable $ex) {
+        $problems = [$ex->getMessage()];
+        error_log('[lucapetloan] run_schema: ' . $ex->getMessage());
     }
-    exit('Already installed. <a href="' . e(url('login.php')) . '">Sign in</a>');
+    // Details only for whoever holds the setup key: /install.php?key=...
+    $showDetails = SETUP_KEY !== '' && hash_equals(SETUP_KEY, (string)($_GET['key'] ?? ''));
+    if ($problems) {
+        http_response_code(500);
+        exit('Database update incomplete.' . ($showDetails ? '<pre>' . e(implode("
+", $problems)) . '</pre>' : ' Open /install.php?key=YOUR_SETUP_KEY for details.'));
+    }
+    exit('Already installed. Database is up to date. <a href="' . e(url('login.php')) . '">Sign in</a>');
 }
 
 $errors = [];

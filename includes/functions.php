@@ -451,9 +451,13 @@ function store_upload(string $field, int $userId): ?string
     return 'doc:' . db()->lastInsertId();
 }
 
-/** Create any missing tables, then bring older databases up to date. */
-function run_schema(): void
+/**
+ * Create any missing tables, then bring older databases up to date.
+ * Returns the errors from changes that could not be applied.
+ */
+function run_schema(): array
 {
+    $errors = [];
     foreach (require __DIR__ . '/schema.php' as $sql) {
         db()->exec($sql);
     }
@@ -475,7 +479,8 @@ function run_schema(): void
             db()->exec($sql);
         } catch (PDOException $e) {
             if (!in_array($e->errorInfo[1] ?? 0, [1060, 1061], true)) {   // column / index already exists
-                throw $e;
+                $errors[] = $sql . ' → ' . $e->getMessage();
+                error_log('[lucapetloan] migration failed: ' . end($errors));
             }
         }
     }
@@ -485,6 +490,7 @@ function run_schema(): void
     }
     // Savings that were already in a plan start earning from today.
     q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE interest_accrued_on IS NULL AND balance > 0');
+    return $errors;
 }
 
 /** Remove a stored document (database reference or a legacy file in uploads/). */
