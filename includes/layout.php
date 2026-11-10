@@ -116,7 +116,7 @@ function html_head(string $title, array $extraCss = []): void
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=4">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=5">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>

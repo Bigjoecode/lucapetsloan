@@ -6,10 +6,11 @@ $kyc = q_one('SELECT * FROM kyc WHERE user_id = ?', [$uid]);
 $editable = in_array($u['kyc_status'], ['none', 'submitted', 'rejected'], true);
 
 $fields = [
-    'dob', 'gender', 'marital_status', 'id_type', 'id_number', 'bvn',
+    'dob', 'gender', 'marital_status', 'id_type', 'id_number', 'bvn', 'nin',
     'address', 'landmark', 'city', 'lga', 'state', 'latitude', 'longitude', 'residence_type', 'years_at_address',
     'occupation', 'employer_name', 'work_address', 'monthly_income', 'bank_name', 'bank_code', 'account_number', 'account_name',
-    'nok_name', 'nok_phone', 'nok_relationship', 'guarantor_name', 'guarantor_phone', 'guarantor_address',
+    'nok_name', 'nok_phone', 'nok_relationship', 'guarantor_name', 'guarantor_phone', 'guarantor_address', 'guarantor_relationship',
+    'collateral_type', 'collateral_description', 'collateral_value',
     'preferred_visit_date', 'preferred_visit_time', 'visit_instructions',
 ];
 $optional = ['latitude', 'longitude', 'visit_instructions', 'bank_code'];
@@ -39,6 +40,10 @@ if (is_post() && $editable) {
     $dob = strtotime($data['dob'] ?: 'now');
     if ($dob > strtotime('-18 years')) $errors['dob'] = 'You must be at least 18 years old.';
     if (!preg_match('/^\d{11}$/', $data['bvn'])) $errors['bvn'] = 'BVN must be 11 digits.';
+    if (!preg_match('/^\d{11}$/', $data['nin'])) $errors['nin'] = 'NIN must be 11 digits.';
+    if (!in_array($data['collateral_type'], COLLATERAL_TYPES, true)) $errors['collateral_type'] = 'Choose what you are offering as collateral.';
+    if ((float)$data['collateral_value'] <= 0) $errors['collateral_value'] = 'Enter the estimated value of your collateral.';
+    if (preg_replace('/\D/', '', $data['guarantor_phone']) === preg_replace('/\D/', '', $u['phone'])) $errors['guarantor_phone'] = 'Your guarantor must be someone else.';
     if (!preg_match('/^\d{10}$/', $data['account_number'])) $errors['account_number'] = 'Account number must be 10 digits.';
     if ((float)$data['monthly_income'] <= 0) $errors['monthly_income'] = 'Enter your monthly income.';
     if (strtotime($data['preferred_visit_date'] ?: 'yesterday') < strtotime('tomorrow')) $errors['preferred_visit_date'] = 'Pick a visit date from tomorrow onward.';
@@ -59,7 +64,7 @@ if (is_post() && $editable) {
         $data['bvn_check_details'] = mb_substr($check['details'], 0, 255);
     }
 
-    $docs = ['id_doc' => 'ID document', 'photo' => 'Passport photo', 'utility_bill' => 'Utility bill'];
+    $docs = ['id_doc' => 'ID document', 'photo' => 'Passport photo', 'utility_bill' => 'Utility bill', 'collateral_doc' => 'Collateral photo or document'];
     $uploaded = [];
     if (!$errors) {
         $new = [];
@@ -128,7 +133,7 @@ app_header('Verification', 'verification');
     <div class="st <?= $stepState(4) ?>">Verified</div>
   </div>
   <?php if ($status === 'none'): ?>
-    <p class="muted small">Before we can lend to you, we need your identity and contact details. One of our field officers will then <strong>visit your home or business in person</strong> to confirm them. Once the visit is done, you can apply for a loan.</p>
+    <p class="muted small">Saving needs no checks. To borrow, we need your <strong>ID, BVN and NIN, a guarantor, collateral</strong> and your bank details. One of our field officers then <strong>visits your home or business in person</strong> to confirm them and see the collateral. Once the visit is done, you can apply for a loan.</p>
   <?php elseif ($status === 'submitted'): ?>
     <div class="alert alert-info" style="margin:0">We're reviewing your details. You'll get a notification when your home visit is scheduled. You can still make changes below.</div>
   <?php elseif ($status === 'visit_scheduled'): ?>
@@ -180,7 +185,8 @@ app_header('Verification', 'verification');
     <div class="form-grid">
       <label>ID type<select name="id_type" required><option value="">Select</option><?php foreach (['NIN Slip / National ID', 'International Passport', "Driver's Licence", "Voter's Card"] as $o): ?><option <?= $sel('id_type', $o) ?>><?= e($o) ?></option><?php endforeach; ?></select></label>
       <label>ID number <?= $err('id_number') ?><input name="id_number" required value="<?= $v('id_number') ?>"></label>
-      <label>BVN <span class="hint">11 digits</span> <?= $err('bvn') ?><input name="bvn" inputmode="numeric" pattern="\d{11}" maxlength="11" required value="<?= $v('bvn') ?>"></label>
+      <label>BVN <span class="hint">11 digits · dial *565*0#</span> <?= $err('bvn') ?><input name="bvn" inputmode="numeric" pattern="\d{11}" maxlength="11" required value="<?= $v('bvn') ?>"></label>
+      <label>NIN <span class="hint">11 digits · dial *346#</span> <?= $err('nin') ?><input name="nin" inputmode="numeric" pattern="\d{11}" maxlength="11" required value="<?= $v('nin') ?>"></label>
     </div>
   </fieldset>
 
@@ -228,6 +234,18 @@ app_header('Verification', 'verification');
       <label>Guarantor name<input name="guarantor_name" required value="<?= $v('guarantor_name') ?>"></label>
       <label>Guarantor phone<input type="tel" name="guarantor_phone" required value="<?= $v('guarantor_phone') ?>"></label>
       <label>Guarantor address<input name="guarantor_address" required value="<?= $v('guarantor_address') ?>"></label>
+      <label>Guarantor is your<input name="guarantor_relationship" required value="<?= $v('guarantor_relationship') ?>" placeholder="e.g. Employer, Uncle, Church pastor"></label>
+    </div>
+    <p class="muted small" style="margin:.6rem 0 0">Your guarantor agrees to be contacted if your loan goes unpaid. We call them to confirm before approving.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend><?= icon('shield', 18) ?> Collateral</legend>
+    <p class="muted small" style="margin-top:0">Something of value you pledge as security for your loan. Our field officer will see it during the home visit. You keep using it; it's only claimed if the loan is not repaid.</p>
+    <div class="form-grid">
+      <label>What you're offering <?= $err('collateral_type') ?><select name="collateral_type" required><option value="">Select</option><?php foreach (COLLATERAL_TYPES as $o): ?><option <?= $sel('collateral_type', $o) ?>><?= e($o) ?></option><?php endforeach; ?></select></label>
+      <label>Estimated value <?= $err('collateral_value') ?><input type="number" name="collateral_value" min="1" step="1000" required value="<?= $v('collateral_value') ?>"></label>
+      <label style="grid-column:1/-1">Description <span class="hint">Make, model, size or document number</span><input name="collateral_description" required maxlength="255" value="<?= $v('collateral_description') ?>" placeholder="e.g. 2014 Toyota Corolla, plate LSD-123-AB"></label>
     </div>
   </fieldset>
 
@@ -238,6 +256,7 @@ app_header('Verification', 'verification');
       <label>Government ID<?= !empty($kyc['id_doc']) ? ' <span class="badge badge-ok">uploaded</span>' : '' ?><input type="file" name="id_doc" accept="image/*,application/pdf" <?= empty($kyc['id_doc']) ? 'required' : '' ?>></label>
       <label>Passport photo / selfie<?= !empty($kyc['photo']) ? ' <span class="badge badge-ok">uploaded</span>' : '' ?><input type="file" name="photo" accept="image/*" capture="user" <?= empty($kyc['photo']) ? 'required' : '' ?>></label>
       <label>Utility bill <span class="hint">Shows your address, last 3 months</span><?= !empty($kyc['utility_bill']) ? ' <span class="badge badge-ok">uploaded</span>' : '' ?><input type="file" name="utility_bill" accept="image/*,application/pdf" <?= empty($kyc['utility_bill']) ? 'required' : '' ?>></label>
+      <label>Collateral photo or document <span class="hint">e.g. vehicle papers, C of O, photo of the goods</span><?= !empty($kyc['collateral_doc']) ? ' <span class="badge badge-ok">uploaded</span>' : '' ?><input type="file" name="collateral_doc" accept="image/*,application/pdf" <?= empty($kyc['collateral_doc']) ? 'required' : '' ?>></label>
     </div>
   </fieldset>
 

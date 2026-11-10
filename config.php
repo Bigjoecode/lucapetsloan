@@ -73,8 +73,8 @@ const SETTING_DEFAULTS = [
     'bank_account_number'  => '0123456789',
 ];
 
-// Vercel caps a whole request at 4.5 MB, so each of the 3 documents must stay small there.
-define('MAX_UPLOAD_BYTES', IS_VERCEL ? (int)(1.3 * 1024 * 1024) : 5 * 1024 * 1024);
+// Vercel caps a whole request at 4.5 MB, so each of the 4 documents must stay small there.
+define('MAX_UPLOAD_BYTES', IS_VERCEL ? 850 * 1024 : 5 * 1024 * 1024);
 define('DAYS_PER_MONTH', 30);                   // interest month length
 
 // Service API keys are managed by the super admin under Integrations (includes/integrations.php).

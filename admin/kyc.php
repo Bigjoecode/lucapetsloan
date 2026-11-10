@@ -95,7 +95,7 @@ if (is_post()) {
     } elseif ($action === 'outcome') {
         $result = post('result');
         $notes = mb_substr(post('visit_notes'), 0, 2000);
-        $checks = array_intersect((array)($_POST['checks'] ?? []), ['Address confirmed', 'Original ID sighted', 'Customer met in person', 'Business/workplace seen', 'Guarantor contacted', 'Photo matches customer']);
+        $checks = array_intersect((array)($_POST['checks'] ?? []), ['Address confirmed', 'Original ID sighted', 'NIN slip sighted', 'Customer met in person', 'Business/workplace seen', 'Guarantor contacted', 'Photo matches customer', 'Collateral seen and matches description']);
         $fullNotes = trim(($checks ? '✔ ' . implode(' · ✔ ', $checks) . "\n" : '') . $notes);
         if ($result === 'verified') {
             q('UPDATE kyc SET visit_notes = ?, reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL WHERE user_id = ?', [$fullNotes, $admin['id'], $uid]);
@@ -164,6 +164,7 @@ if ($id) {
             <dt>Gender / status</dt><dd><?= e($k['gender']) ?> · <?= e($k['marital_status']) ?></dd>
             <dt>ID</dt><dd><?= e($k['id_type']) ?> · <?= e($k['id_number']) ?></dd>
             <dt>BVN</dt><dd><?= e($k['bvn']) ?><?php if ($k['bvn_check']): ?> <span class="badge badge-<?= ['match' => 'ok', 'partial' => 'warn', 'no_match' => 'bad', 'error' => 'muted'][$k['bvn_check']] ?? 'muted' ?>"><?= e(['match' => 'BVN matches name', 'partial' => 'BVN partly matches', 'no_match' => 'BVN name differs', 'error' => 'BVN not checked'][$k['bvn_check']] ?? $k['bvn_check']) ?></span><div class="muted small"><?= e($k['bvn_check_details']) ?></div><?php endif; ?></dd>
+            <dt>NIN</dt><dd><?= $k['nin'] ? e($k['nin']) : '<span class="muted">Not given (older submission)</span>' ?></dd>
           </dl>
         </div>
         <div class="card">
@@ -180,9 +181,19 @@ if ($id) {
           <h2>Next of kin &amp; guarantor</h2>
           <dl class="kv">
             <dt>Next of kin</dt><dd><?= e($k['nok_name']) ?> (<?= e($k['nok_relationship']) ?>) · <a href="tel:<?= e($k['nok_phone']) ?>"><?= e($k['nok_phone']) ?></a></dd>
-            <dt>Guarantor</dt><dd><?= e($k['guarantor_name']) ?> · <a href="tel:<?= e($k['guarantor_phone']) ?>"><?= e($k['guarantor_phone']) ?></a></dd>
+            <dt>Guarantor</dt><dd><?= e($k['guarantor_name']) ?><?= $k['guarantor_relationship'] ? ' (' . e($k['guarantor_relationship']) . ')' : '' ?> · <a href="tel:<?= e($k['guarantor_phone']) ?>"><?= e($k['guarantor_phone']) ?></a></dd>
             <dt>Guarantor address</dt><dd><?= e($k['guarantor_address']) ?></dd>
           </dl>
+        </div>
+        <div class="card">
+          <h2><?= icon('shield', 18) ?> Collateral</h2>
+          <?php if ($k['collateral_type']): ?>
+            <dl class="kv">
+              <dt>Type</dt><dd><?= e($k['collateral_type']) ?></dd>
+              <dt>Description</dt><dd><?= e($k['collateral_description']) ?></dd>
+              <dt>Estimated value</dt><dd><strong><?= money0($k['collateral_value']) ?></strong> · <?= $credit['limit'] > 0 ? round((float)$k['collateral_value'] / $credit['limit'] * 100) . '% of their borrowing limit' : '' ?></dd>
+            </dl>
+          <?php else: ?><p class="muted small">Submitted before collateral was required. Ask the customer to update their verification, or note collateral at the visit.</p><?php endif; ?>
         </div>
       </div>
 
@@ -190,7 +201,7 @@ if ($id) {
         <div class="card">
           <h2><?= icon('doc', 18) ?> Documents</h2>
           <div class="grid grid-3">
-            <?php foreach (['photo' => 'Photo', 'id_doc' => 'Government ID', 'utility_bill' => 'Utility bill'] as $d => $t): ?>
+            <?php foreach (['photo' => 'Photo', 'id_doc' => 'Government ID', 'utility_bill' => 'Utility bill', 'collateral_doc' => 'Collateral'] as $d => $t): if (empty($k[$d])) continue; ?>
               <a href="<?= $docUrl($d) ?>" target="_blank" class="card" style="padding:.6rem;text-align:center;box-shadow:none">
                 <?php if (!is_pdf_ref($k[$d])): ?><img src="<?= $docUrl($d) ?>" alt="<?= e($t) ?>" style="width:100%;height:110px;object-fit:cover;border-radius:8px"><?php else: ?><div style="height:110px;display:grid;place-items:center"><?= icon('doc', 40) ?></div><?php endif; ?>
                 <div class="small" style="margin-top:.4rem;font-weight:600"><?= e($t) ?></div>
@@ -243,7 +254,7 @@ if ($id) {
           <form method="post" class="form">
             <?= csrf_field() ?><input type="hidden" name="action" value="outcome"><input type="hidden" name="user_id" value="<?= $id ?>">
             <div class="grid" style="gap:.4rem">
-              <?php foreach (['Address confirmed', 'Original ID sighted', 'Customer met in person', 'Photo matches customer', 'Business/workplace seen', 'Guarantor contacted'] as $c): ?>
+              <?php foreach (['Address confirmed', 'Original ID sighted', 'NIN slip sighted', 'Customer met in person', 'Photo matches customer', 'Business/workplace seen', 'Guarantor contacted', 'Collateral seen and matches description'] as $c): ?>
                 <label class="check"><input type="checkbox" name="checks[]" value="<?= e($c) ?>"><span><?= e($c) ?></span></label>
               <?php endforeach; ?>
             </div>

@@ -193,6 +193,9 @@ function require_login(): array
         flash('info', 'Please sign in to continue.');
         redirect('login.php');
     }
+    if (!has_pin($u) && !defined('SKIP_PIN_GATE')) {
+        redirect('pin_setup.php');
+    }
     return $u;
 }
 
@@ -558,6 +561,13 @@ function run_schema(): array
         'ALTER TABLE loans ADD COLUMN collector_id INT UNSIGNED NULL',
         'ALTER TABLE loans ADD COLUMN agreement_accepted_at DATETIME NULL',
         'ALTER TABLE loans ADD COLUMN agreement_ip VARCHAR(45) NULL',
+        'ALTER TABLE kyc ADD COLUMN nin VARCHAR(11) NULL',
+        'ALTER TABLE kyc ADD COLUMN guarantor_relationship VARCHAR(40) NULL',
+        'ALTER TABLE kyc ADD COLUMN collateral_type VARCHAR(40) NULL',
+        'ALTER TABLE kyc ADD COLUMN collateral_description VARCHAR(255) NULL',
+        'ALTER TABLE kyc ADD COLUMN collateral_value DECIMAL(14,2) NULL',
+        'ALTER TABLE kyc ADD COLUMN collateral_doc VARCHAR(80) NULL',
+        'ALTER TABLE users ADD COLUMN pin_set_at DATETIME NULL',
     ];
     foreach ($migrations as $sql) {
         try {
@@ -899,6 +909,10 @@ function distance_m(float $lat1, float $lng1, float $lat2, float $lng2): int
     $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
     return (int)round($r * 2 * atan2(sqrt($a), sqrt(1 - $a)));
 }
+
+/** What a customer can pledge as security for a loan. */
+const COLLATERAL_TYPES = ['Vehicle (car, tricycle, motorcycle)', 'Land or property documents', 'Shop goods / inventory', 'Equipment or machinery',
+    'Household items (TV, fridge, generator)', 'Savings held as security', 'Other'];
 
 /** How a collections contact went. */
 const COLLECTION_OUTCOMES = [

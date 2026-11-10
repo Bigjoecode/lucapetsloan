@@ -28,7 +28,13 @@ if (is_post()) {
                     $_SESSION['2fa_at'] = time();
                     redirect('login_2fa.php');
                 }
-                login_user($user);
+                if (has_pin($user)) {
+                    session_regenerate_id(true);
+                    $_SESSION['pin_uid'] = (int)$user['id'];
+                    $_SESSION['pin_at'] = time();
+                    redirect('login_pin.php');
+                }
+                login_user($user);   // no PIN yet: they're sent to create one
                 redirect(home_for($user));
             }
         } else {
@@ -48,7 +54,7 @@ public_header('Sign in');
     <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
     <form method="post" class="form">
       <?= csrf_field() ?>
-      <label>Email or phone<input name="login" required autocomplete="username" value="<?= e(post('login')) ?>"></label>
+      <label>Email<input name="login" required autocomplete="username" value="<?= e(post('login')) ?>"></label>
       <label><span class="row between">Password <a class="small" href="<?= url('forgot_password.php') ?>">Forgot password?</a></span><input type="password" name="password" required autocomplete="current-password"></label>
       <button class="btn btn-primary btn-block">Sign in</button>
     </form>

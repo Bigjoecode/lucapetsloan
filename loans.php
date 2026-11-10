@@ -102,8 +102,8 @@ app_header('Loans', 'loans');
   <div class="card-head"><h2>Apply for a loan</h2></div>
   <?php if ($u['kyc_status'] !== 'verified'): ?>
     <div class="alert alert-warn" style="margin:0">
-      Loans are only available after your verification and <strong>physical home visit</strong> are complete. Current status: <?= badge($u['kyc_status']) ?>
-      <div style="margin-top:.6rem"><a class="btn btn-primary btn-sm" href="<?= url('verification.php') ?>">Go to verification</a></div>
+      To borrow, you first complete <strong>loan verification</strong>: your ID, BVN and NIN, a guarantor, collateral, and a <strong>physical home visit</strong> by our field officer. Current status: <?= badge($u['kyc_status']) ?>
+      <div style="margin-top:.6rem"><a class="btn btn-primary btn-sm" href="<?= url('verification.php') ?>"><?= $u['kyc_status'] === 'none' ? 'Start loan verification' : 'View my verification' ?></a></div>
     </div>
   <?php elseif ($open): ?>
     <div class="alert alert-info" style="margin:0">You already have a loan in progress (<?= label($open['status']) ?>). You can apply again once it is fully repaid.</div>

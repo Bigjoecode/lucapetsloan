@@ -11,12 +11,12 @@ if ($reset && is_post()) {
     if (strlen($pass) < 8) $errors[] = 'Password must be at least 8 characters.';
     if ($pass !== (string)post('password2')) $errors[] = 'Passwords do not match.';
     if (!$errors) {
-        q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $reset['id']]);
+        q('UPDATE users SET password_hash = ?, pin_hash = NULL, pin_fails = 0, pin_locked_until = NULL WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $reset['id']]);   // they create a new PIN at sign-in
         // Every outstanding link for this account stops working once one is used.
         q('UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [$reset['id']]);
         notify((int)$reset['id'], 'Password changed', 'Your password was reset. If this wasn\'t you, call ' . SUPPORT_PHONE . ' right away.', '', true);
         unset($_SESSION['uid'], $_SESSION['login_fails']);
-        flash('success', 'Password updated. Sign in with your new password.');
+        flash('success', 'Password updated. Sign in with your new password, then create a new PIN.');
         redirect('login.php');
     }
 }

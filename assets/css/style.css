@@ -272,3 +272,4 @@ dialog::backdrop { background: rgba(10, 30, 22, .45); }
 
 [hidden] { display: none !important; }
 .section-title { font-size: 1rem; margin: 1.4rem 0 .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pin-input { font-size: 1.6rem; letter-spacing: .8em; text-align: center; font-family: "JetBrains Mono", monospace; }

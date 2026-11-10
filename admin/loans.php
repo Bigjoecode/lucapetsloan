@@ -201,6 +201,7 @@ if ($id) {
               <dt>Installment / income</dt><dd><?= $dti !== null ? '<span style="color:' . ($dti > 40 ? 'var(--bad)' : 'var(--ok)') . '">' . number_format($dti, 1) . '%</span>' : '—' ?></dd>
               <dt>Pay out to</dt><dd><?= e($kyc['bank_name']) ?> · <?= e($kyc['account_number']) ?> · <?= e($kyc['account_name']) ?></dd>
               <dt>Guarantor</dt><dd><?= e($kyc['guarantor_name']) ?> · <?= e($kyc['guarantor_phone']) ?></dd>
+              <dt>Collateral</dt><dd><?= $kyc['collateral_type'] ? e($kyc['collateral_type']) . ' · ' . money0($kyc['collateral_value']) . ((float)$kyc['collateral_value'] < (float)$loan['amount'] ? ' <span class="badge badge-warn">worth less than the loan</span>' : '') : '<span class="muted">None recorded</span>' ?></dd>
             <?php endif; ?>
             <dt>Savings</dt><dd><?= money($savings) ?> · saved on <?= $daysSaved ?> days</dd>
             <dt>Past loans</dt><dd><?= $history ? implode(', ', array_map(fn($k, $c) => $c . ' ' . $k, array_keys($history), $history)) : 'None' ?></dd>

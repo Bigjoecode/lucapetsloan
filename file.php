@@ -6,7 +6,7 @@ $u = require_login();
 $userId = (int)($_GET['u'] ?? 0);
 $doc = $_GET['doc'] ?? '';
 $staffCanSee = can('kyc') || can('visits') || can('loans');
-if (!in_array($doc, ['id_doc', 'photo', 'utility_bill', 'visit_photo'], true) || (!$staffCanSee && ($userId !== (int)$u['id'] || $doc === 'visit_photo'))) {
+if (!in_array($doc, ['id_doc', 'photo', 'utility_bill', 'visit_photo', 'collateral_doc'], true) || (!$staffCanSee && ($userId !== (int)$u['id'] || $doc === 'visit_photo'))) {
     http_response_code(403);
     exit('Not allowed.');
 }

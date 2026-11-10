@@ -38,8 +38,8 @@ if (is_post()) {
         q('INSERT INTO savings_plans (user_id, name, daily_amount) VALUES (?, "Daily Savings", 500)', [$id]);
         notify($id, 'Welcome to ' . APP_NAME . '!', 'Start saving daily, then complete your verification to unlock loans.', 'verification.php');
         login_user(['id' => $id]);
-        flash('success', 'Account created. We opened a Daily Savings plan for you.');
-        redirect('dashboard.php');
+        flash('success', 'Account created and a Daily Savings plan opened. Now create your PIN.');
+        redirect('pin_setup.php');
     }
 }
 
