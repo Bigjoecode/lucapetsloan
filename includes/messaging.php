@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 function sms_on(): bool
 {
-    return TERMII_API_KEY !== '' && setting('sms_enabled');
+    return termii_key() !== '' && setting('sms_enabled');
 }
 
 /** 0803 123 4567 / +2348031234567 → 2348031234567 */
@@ -34,7 +34,7 @@ function send_sms(?int $userId, string $phone, string $text, string $kind = '', 
     }
     $to = ng_phone($phone);
     $text = mb_substr(str_replace('₦', 'N', $text), 0, 480);   // ₦ isn't in the GSM alphabet and would double the cost
-    $payload = json_encode(['to' => $to, 'from' => TERMII_SENDER_ID, 'sms' => $text, 'type' => 'plain', 'channel' => TERMII_CHANNEL, 'api_key' => TERMII_API_KEY]);
+    $payload = json_encode(['to' => $to, 'from' => termii_sender(), 'sms' => $text, 'type' => 'plain', 'channel' => TERMII_CHANNEL, 'api_key' => termii_key()]);
     $ch = curl_init(TERMII_BASE_URL . '/sms/send');
     curl_setopt_array($ch, [
         CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15,

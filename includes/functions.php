@@ -1105,7 +1105,7 @@ function absolute_url(string $path): string
 
 function mail_enabled(): bool
 {
-    return RESEND_API_KEY !== '';
+    return resend_key() !== '';
 }
 
 /** Send an email through Resend. Returns false if it could not be sent. */
@@ -1116,8 +1116,8 @@ function send_mail(string $to, string $subject, string $html): bool
     }
     $ctx = stream_context_create(['http' => [
         'method'        => 'POST',
-        'header'        => "Authorization: Bearer " . RESEND_API_KEY . "\r\nContent-Type: application/json\r\n",
-        'content'       => json_encode(['from' => MAIL_FROM, 'to' => [$to], 'subject' => $subject, 'html' => $html]),
+        'header'        => "Authorization: Bearer " . resend_key() . "\r\nContent-Type: application/json\r\n",
+        'content'       => json_encode(['from' => mail_from(), 'to' => [$to], 'subject' => $subject, 'html' => $html]),
         'timeout'       => 10,
         'ignore_errors' => true,
     ]]);

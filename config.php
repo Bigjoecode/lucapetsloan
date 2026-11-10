@@ -46,13 +46,13 @@ const SETTING_DEFAULTS = [
     'min_deposit'          => 100,
     'min_withdrawal'       => 500,
     'manual_deposits'      => 1,        // customers may pay by bank transfer and enter a reference
-    'flw_deposits'         => 1,        // pay online through Flutterwave (needs FLW_SECRET_KEY)
+    'flw_deposits'         => 1,        // pay online through Flutterwave (keys under Integrations)
     'flw_payouts'          => 1,        // send approved withdrawals through Flutterwave
     'auto_payouts'         => 1,        // send withdrawals instantly through Flutterwave, without staff approval
     'auto_payout_daily_limit' => 50000, // per customer per day; above it (or 0 = no limit) staff approve
     'auto_approve_repeat'  => 1,        // approve loans instantly for customers with an on-time repayment record
     'auto_disburse'        => 1,        // pay instantly approved loans straight to the customer's bank
-    'sms_enabled'          => 1,        // send important alerts and reminders by SMS (needs TERMII_API_KEY)
+    'sms_enabled'          => 1,        // send important alerts and reminders by SMS (Termii key under Integrations)
     'savings_sms_reminders'=> 0,        // daily SMS nudge when a plan hasn't been paid that day (costs per SMS)
     // Borrowing limit by credit level; savings add up to the same amount again.
     'limit_starter'        => 20000,
@@ -61,6 +61,8 @@ const SETTING_DEFAULTS = [
     'limit_gold'           => 250000,
     'limit_platinum'       => 500000,
     'last_cron_run'        => '',       // written by the daily job
+    'flw_mode'             => 'test',   // Flutterwave keys in use: test or live (keys are under Integrations)
+    'dojah_mode'           => 'sandbox',// Dojah sandbox (test data) or live
     'dual_approval_amount' => 200000,   // loans this size or bigger need two staff approvals (0 = off)
     'require_staff_2fa'    => 0,        // staff must use an authenticator app to sign in
     'referral_bonus'       => 500,      // paid into the inviter's savings (0 = off)
@@ -75,31 +77,23 @@ const SETTING_DEFAULTS = [
 define('MAX_UPLOAD_BYTES', IS_VERCEL ? (int)(1.3 * 1024 * 1024) : 5 * 1024 * 1024);
 define('DAYS_PER_MONTH', 30);                   // interest month length
 
-// Flutterwave (v3 API) for online deposits, repayments and withdrawals.
-// FLW_SECRET_HASH must match the "secret hash" set for the webhook in the Flutterwave dashboard.
-define('FLW_SECRET_KEY', env('FLW_SECRET_KEY', ''));
-define('FLW_SECRET_HASH', env('FLW_SECRET_HASH', ''));
+// Service API keys are managed by the super admin under Integrations (includes/integrations.php).
+// The base URLs below are only overridden for local testing.
 define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3'), '/'));
 
-// SMS through Termii (termii.com). TERMII_SENDER_ID must be approved by Termii;
+// SMS through Termii (termii.com). The sender ID must be approved by Termii;
 // the "dnd" channel also reaches numbers on Do-Not-Disturb but needs that approval too.
-define('TERMII_API_KEY', env('TERMII_API_KEY', ''));
-define('TERMII_SENDER_ID', env('TERMII_SENDER_ID', 'LucaPet'));
 define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
 define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
 
 // BVN checks through Dojah (dojah.io). Use https://sandbox.dojah.io while testing.
-define('DOJAH_APP_ID', env('DOJAH_APP_ID', ''));
-define('DOJAH_SECRET_KEY', env('DOJAH_SECRET_KEY', ''));
-define('DOJAH_BASE_URL', rtrim(env('DOJAH_BASE_URL', 'https://api.dojah.io'), '/'));
+define('DOJAH_BASE_URL', rtrim((string)env('DOJAH_BASE_URL', ''), '/'));   // override only; normally set by the sandbox/live switch
 
 // Daily scheduled job (/cron.php). Vercel sends "Authorization: Bearer <CRON_SECRET>".
 define('CRON_SECRET', env('CRON_SECRET', ''));
 
 // Password reset emails go out through Resend (resend.com) when a key is set;
 // without one, reset requests reach the admins, who send the customer a link.
-define('RESEND_API_KEY', env('RESEND_API_KEY', ''));
-define('MAIL_FROM', env('MAIL_FROM', APP_NAME . ' <onboarding@resend.dev>'));
 
 define('UPLOAD_DIR', __DIR__ . '/uploads');     // only used for documents uploaded before they moved into the database
 

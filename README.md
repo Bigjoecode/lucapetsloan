@@ -20,6 +20,10 @@ Optional environment variables: `APP_NAME`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `A
 
 **Roles.** The first admin is the *super admin*: they manage staff and their permissions (Staff & roles), change loan and savings rates, payment options and bank details (Settings), and read the audit log of every staff action. Other staff only see the pages their permissions allow.
 
+**Service keys.** A super admin enters the Flutterwave (test and live, with a switch between them), Termii, Dojah and Resend keys under Admin → Integrations. They are stored encrypted (set `APP_KEY` to any long random string to choose the encryption key; otherwise it is derived from the database password, so changing that password means re-entering the keys). The environment variables below still work as a fallback.
+
+Flutterwave transfers (withdrawals, loan pay-outs) only work from server IPs whitelisted in the Flutterwave dashboard. Payments in work without it.
+
 **Flutterwave.** Set `FLW_SECRET_KEY` (a `FLWSECK_TEST-...` key while testing) and `FLW_SECRET_HASH` (any long random string). In the Flutterwave dashboard, set the webhook URL to `https://<your-site>/flw_webhook.php` with the same secret hash. Customers can then pay deposits and repayments online, and staff can send withdrawals to customers' banks. Withdrawals need the customer's bank picked from the list (Verification or Profile → Payout account).
 
 Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (for example `LucaPet Loan <no-reply@yourdomain.com>`, on a domain verified in Resend). Without a key, reset requests notify the admins, who create a one-time link under Customers → Reset link and send it by SMS or WhatsApp.

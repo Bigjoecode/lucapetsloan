@@ -181,6 +181,7 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
             'ajo'       => can('customers') ? ['admin/ajo.php', 'Group savings', 'users'] : null,
             'staff'     => is_super($u) ? ['admin/staff.php', 'Staff & roles', 'shield'] : null,
             'settings'  => is_super($u) ? ['admin/settings.php', 'Settings', 'cog'] : null,
+            'integrations' => is_super($u) ? ['admin/integrations.php', 'Integrations', 'shield'] : null,
             'audit'     => is_super($u) ? ['admin/audit.php', 'Audit log', 'list'] : null,
         ]);
         $mobile = array_slice(array_keys($nav), 0, 5);

@@ -5,7 +5,7 @@ declare(strict_types=1);
 
 function dojah_on(): bool
 {
-    return DOJAH_APP_ID !== '' && DOJAH_SECRET_KEY !== '';
+    return int_key('dojah_app_id') !== '' && int_key('dojah_secret_key') !== '';
 }
 
 /**
@@ -16,10 +16,10 @@ function bvn_check(string $bvn, string $fullName, string $dob): array
 {
     $words = preg_split('/\s+/', trim($fullName));
     $query = http_build_query(['bvn' => $bvn, 'first_name' => $words[0] ?? '', 'last_name' => count($words) > 1 ? end($words) : '', 'dob' => $dob]);
-    $ch = curl_init(DOJAH_BASE_URL . '/api/v1/kyc/bvn?' . $query);
+    $ch = curl_init(dojah_base() . '/api/v1/kyc/bvn?' . $query);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20,
-        CURLOPT_HTTPHEADER => ['AppId: ' . DOJAH_APP_ID, 'Authorization: ' . DOJAH_SECRET_KEY, 'Accept: application/json'],
+        CURLOPT_HTTPHEADER => ['AppId: ' . int_key('dojah_app_id'), 'Authorization: ' . int_key('dojah_secret_key'), 'Accept: application/json'],
     ]);
     $raw = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);

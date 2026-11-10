@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/integrations.php';
 require_once __DIR__ . '/flutterwave.php';
 require_once __DIR__ . '/messaging.php';
 require_once __DIR__ . '/community.php';
@@ -24,7 +25,7 @@ set_exception_handler(function (Throwable $e): void {
     echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Temporarily unavailable</title>'
         . '<body style="font-family:system-ui;background:#f3f5f2;color:#13201b;display:grid;place-items:center;min-height:90vh;margin:0;padding:16px">'
         . '<div style="max-width:440px;text-align:center"><h1 style="font-size:1.4rem">We\'ll be right back</h1>'
-        . '<p style="color:#5d6b65">' . e(APP_NAME) . ' can\'t reach its database at the moment. Please try again in a few minutes.</p>' . $detail . '</div>';
+        . '<p style="color:#5d6b65">' . e(APP_NAME) . ($e instanceof PDOException ? ' can\'t reach its database at the moment.' : ' hit an unexpected problem.') . ' Please try again in a few minutes.</p>' . $detail . '</div>';
 });
 
 if (session_status() === PHP_SESSION_NONE) {

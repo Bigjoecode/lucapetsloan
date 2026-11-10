@@ -1,14 +1,14 @@
 <?php
 /*
  * Flutterwave webhook. Set it in the Flutterwave dashboard (Settings → Webhooks)
- * to https://<your-site>/flw_webhook.php with the same secret hash as FLW_SECRET_HASH.
+ * to https://<your-site>/flw_webhook.php with the same secret hash as under Integrations.
  * Events are only trusted after re-checking them with Flutterwave's API.
  */
 require __DIR__ . '/includes/bootstrap.php';
 
 header('Content-Type: application/json');
 $hash = (string)($_SERVER['HTTP_VERIF_HASH'] ?? '');
-if (FLW_SECRET_HASH === '' || !hash_equals(FLW_SECRET_HASH, $hash)) {
+if (flw_hash() === '' || !hash_equals(flw_hash(), $hash)) {
     http_response_code(401);
     exit('{"status":"unauthorized"}');
 }

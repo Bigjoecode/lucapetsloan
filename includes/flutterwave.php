@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 function flw_configured(): bool
 {
-    return FLW_SECRET_KEY !== '';
+    return flw_secret() !== '';
 }
 
 function flw_deposits_on(): bool
@@ -26,7 +26,7 @@ function flw_payouts_on(): bool
 /** Call the API. Returns ['ok' => bool, 'http' => int, 'body' => array]. */
 function flw_request(string $method, string $path, ?array $payload = null): array
 {
-    $headers = ['Authorization: Bearer ' . FLW_SECRET_KEY, 'Content-Type: application/json', 'Accept: application/json'];
+    $headers = ['Authorization: Bearer ' . flw_secret(), 'Content-Type: application/json', 'Accept: application/json'];
     $body = $payload === null ? null : json_encode($payload);
     if (function_exists('curl_init')) {
         $ch = curl_init(FLW_BASE_URL . $path);

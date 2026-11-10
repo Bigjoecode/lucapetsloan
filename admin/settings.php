@@ -128,11 +128,7 @@ app_header('Settings', 'settings', 'admin');
 
     <div class="card">
       <h2>Flutterwave</h2>
-      <?php if (!flw_configured()): ?>
-        <div class="alert alert-warn">Not connected. Add <code>FLW_SECRET_KEY</code> and <code>FLW_SECRET_HASH</code> to the hosting environment variables, then set the webhook URL below in your Flutterwave dashboard.</div>
-      <?php else: ?>
-        <div class="alert alert-success" style="margin-bottom:.8rem">Connected<?= str_contains(FLW_SECRET_KEY, '_TEST') ? ' in <strong>test mode</strong>; no real money moves' : ' with a <strong>live</strong> key' ?>.<?= FLW_SECRET_HASH === '' ? ' Webhook secret hash is missing, so payments only confirm when customers return to the app.' : '' ?></div>
-      <?php endif; ?>
+      <div class="alert alert-<?= flw_configured() ? 'success' : 'warn' ?>" style="margin-bottom:.8rem"><?= flw_configured() ? 'Connected in <strong>' . (flw_mode() === 'live' ? 'LIVE mode: real money moves' : 'test mode: no real money moves') . '</strong>.' : 'Not connected.' ?> <a href="<?= url('admin/integrations.php') ?>">Manage keys &amp; test/live</a></div>
       <div class="form">
         <label class="check"><input type="checkbox" name="flw_deposits" value="1" <?= $on('flw_deposits') ?>><span class="small">Customers can pay deposits and repayments online (card, transfer, USSD)</span></label>
         <label class="check"><input type="checkbox" name="flw_payouts" value="1" <?= $on('flw_payouts') ?>><span class="small">Pay withdrawals through Flutterwave when staff press Send</span></label>
@@ -162,7 +158,7 @@ app_header('Settings', 'settings', 'admin');
         <label>Two staff approvals for loans of<input type="number" name="dual_approval_amount" min="0" step="10000" value="<?= setting('dual_approval_amount') ?>"><span class="hint">0 = one approval is enough. Instant approval never applies at this size.</span></label>
         <label class="check"><input type="checkbox" name="require_staff_2fa" value="1" <?= $on('require_staff_2fa') ?>><span class="small">All staff must sign in with an authenticator app (two-step sign-in)</span></label>
         <label>Flag home-visit check-ins further than (metres)<input type="number" name="visit_radius_m" min="50" step="50" value="<?= setting('visit_radius_m') ?>"></label>
-        <p class="small muted" style="margin:0">BVN checks: <?= dojah_on() ? '<strong>on</strong> through Dojah' . (str_contains(DOJAH_BASE_URL, 'sandbox') ? ' (sandbox, test data only)' : '') : 'off. Add <code>DOJAH_APP_ID</code> and <code>DOJAH_SECRET_KEY</code> to check every BVN before a visit is booked' ?>.</p>
+        <p class="small muted" style="margin:0">BVN checks: <?= dojah_on() ? '<strong>on</strong> through Dojah' . (str_contains(dojah_base(), 'sandbox') ? ' (sandbox, test data only)' : '') : 'off. Add your Dojah keys under <a href="' . url('admin/integrations.php') . '">Integrations</a> to check every BVN before a visit is booked' ?>.</p>
       </div>
     </div>
 
@@ -179,11 +175,7 @@ app_header('Settings', 'settings', 'admin');
 
     <div class="card">
       <h2>SMS</h2>
-      <?php if (TERMII_API_KEY === ''): ?>
-        <div class="alert alert-warn">Not connected. Add <code>TERMII_API_KEY</code> and <code>TERMII_SENDER_ID</code> (approved by Termii) to the hosting environment variables.</div>
-      <?php else: ?>
-        <div class="alert alert-success" style="margin-bottom:.8rem">Termii connected · sender <strong><?= e(TERMII_SENDER_ID) ?></strong> · <?= (int)q_val('SELECT COUNT(*) FROM messages_log WHERE status = "sent" AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)') ?> sent in the last 30 days</div>
-      <?php endif; ?>
+      <div class="alert alert-<?= termii_key() ? 'success' : 'warn' ?>" style="margin-bottom:.8rem"><?= termii_key() ? 'Termii connected · sender <strong>' . e(termii_sender()) . '</strong> · ' . (int)q_val('SELECT COUNT(*) FROM messages_log WHERE status = "sent" AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)') . ' sent in the last 30 days.' : 'Not connected.' ?> <a href="<?= url('admin/integrations.php') ?>">Manage keys</a></div>
       <div class="form">
         <label class="check"><input type="checkbox" name="sms_enabled" value="1" <?= $on('sms_enabled') ?>><span class="small">Text customers about approvals, pay-outs, payments, due dates and security changes</span></label>
         <label class="check"><input type="checkbox" name="savings_sms_reminders" value="1" <?= $on('savings_sms_reminders') ?>><span class="small">Also text a daily savings reminder when a plan hasn't been paid (one SMS per customer per day)</span></label>
