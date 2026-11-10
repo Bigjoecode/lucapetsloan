@@ -15,7 +15,7 @@ if ($path === '' || str_ends_with($path, '/')) {
 }
 $path = '/' . ltrim($path, '/');
 
-$public = preg_match('#^/(admin/)?[a-z_]+\.php$#', $path) === 1
+$public = preg_match('#^/(admin/)?[a-z0-9_]+\.php$#', $path) === 1
     && $path !== '/config.php'
     && is_file($root . $path);
 
