@@ -30,8 +30,8 @@ if (is_post()) {
             if ($amount < setting('min_deposit')) throw new UserError('Minimum deposit is ' . money0(setting('min_deposit')) . '.');
             if ($method === 'flutterwave') {
                 if (!flw_deposits_on()) throw new UserError('Online payment is not available right now.');
-                q('INSERT INTO transactions (user_id, type, amount, method, reference, savings_plan_id) VALUES (?, "deposit", ?, "flutterwave", ?, ?)',
-                    [$uid, $amount, flw_reference('LPL-DEP'), $plan['id']]);
+                q('INSERT INTO transactions (user_id, type, amount, method, reference, savings_plan_id, save_card) VALUES (?, "deposit", ?, "flutterwave", ?, ?, ?)',
+                    [$uid, $amount, flw_reference('LPL-DEP'), $plan['id'], (int)(bool)post('save_card')]);
                 $tx = q_one('SELECT * FROM transactions WHERE id = ?', [db()->lastInsertId()]);
                 try {
                     redirect_external(flw_checkout($tx, $u, 'Savings deposit · ' . $plan['name']));
@@ -52,6 +52,7 @@ if (is_post()) {
         elseif ($action === 'withdraw') {
             $amount = round((float)post('amount'), 2);
             if ($amount < setting('min_withdrawal')) throw new UserError('Minimum withdrawal is ' . money0(setting('min_withdrawal')) . '.');
+            check_pin($u, (string)post('pin'));
             $kyc = q_one('SELECT bank_name, account_number, account_name FROM kyc WHERE user_id = ?', [$uid]);
             if (!$kyc) throw new UserError('Add your bank details in Verification before withdrawing.');
             $pdo = db();
@@ -96,8 +97,30 @@ if (is_post()) {
             $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ?', [(int)post('plan_id'), $uid]);
             if (!$plan) throw new UserError('Plan not found.');
             if ((float)$plan['balance'] > 0) throw new UserError('Withdraw the balance before closing this plan.');
-            q('UPDATE savings_plans SET status = "closed" WHERE id = ?', [$plan['id']]);
+            q('UPDATE savings_plans SET status = "closed", auto_save = 0 WHERE id = ?', [$plan['id']]);
             flash('success', 'Plan closed.');
+        }
+
+        elseif ($action === 'auto_save') {
+            $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ? AND status = "active"', [(int)post('plan_id'), $uid]);
+            if (!$plan) throw new UserError('Choose an active savings plan.');
+            $cardId = (int)post('card_id');
+            if ($cardId) {
+                if (!q_val('SELECT 1 FROM payment_cards WHERE id = ? AND user_id = ? AND removed_at IS NULL', [$cardId, $uid])) throw new UserError('Choose one of your saved cards.');
+                q('UPDATE savings_plans SET auto_save = 1, auto_card_id = ?, auto_fails = 0 WHERE id = ?', [$cardId, $plan['id']]);
+                flash('success', 'Auto-save is on: ' . money0($plan['daily_amount']) . ' will be collected from your card every morning on days you have not saved yet.');
+            } else {
+                q('UPDATE savings_plans SET auto_save = 0 WHERE id = ?', [$plan['id']]);
+                flash('success', 'Auto-save turned off for ' . $plan['name'] . '.');
+            }
+        }
+
+        elseif ($action === 'remove_card') {
+            $cardId = (int)post('card_id');
+            q('UPDATE payment_cards SET removed_at = NOW() WHERE id = ? AND user_id = ?', [$cardId, $uid]);
+            q('UPDATE savings_plans SET auto_save = 0 WHERE auto_card_id = ? AND user_id = ?', [$cardId, $uid]);
+            q('UPDATE loans SET auto_repay = 0 WHERE auto_card_id = ? AND user_id = ?', [$cardId, $uid]);
+            flash('success', 'Card removed. Automatic payments that used it are switched off.');
         }
     } catch (UserError $e) {
         flash('error', $e->getMessage());
@@ -112,6 +135,8 @@ $earned = array_sum(array_map(fn($p) => (float)$p['interest_earned'], $plans));
 $pending = q('SELECT * FROM transactions WHERE user_id = ? AND status IN ("pending","processing") AND type IN ("deposit","withdrawal") ORDER BY id DESC', [$uid])->fetchAll();
 $payout = q_one('SELECT bank_name, bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$uid]);
 $hasBank = (bool)$payout;
+$cards = user_cards($uid);
+$cardLabel = fn(array $c) => e(($c['brand'] ?: 'Card') . ' •••• ' . $c['last4']);
 
 app_header('Savings', 'savings');
 ?>
@@ -159,6 +184,24 @@ app_header('Savings', 'savings');
         <?php endfor; ?>
       </div>
     </div>
+    <?php if ($p['status'] === 'active' && flw_deposits_on()): ?>
+      <div class="auto-box">
+        <?php if ($p['auto_save']): $c = array_values(array_filter($cards, fn($c) => (int)$c['id'] === (int)$p['auto_card_id']))[0] ?? null; ?>
+          <div class="row between">
+            <span class="small"><span class="badge badge-ok">Auto-save on</span> <?= money0($p['daily_amount']) ?> every morning from <?= $c ? $cardLabel($c) : 'your card' ?><?= $p['auto_fails'] ? ' · last try failed' : '' ?></span>
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="auto_save"><input type="hidden" name="plan_id" value="<?= $p['id'] ?>"><input type="hidden" name="card_id" value="0"><button class="btn btn-ghost btn-sm">Turn off</button></form>
+          </div>
+        <?php elseif ($cards): ?>
+          <form method="post" class="row">
+            <?= csrf_field() ?><input type="hidden" name="action" value="auto_save"><input type="hidden" name="plan_id" value="<?= $p['id'] ?>">
+            <select name="card_id" style="width:auto;flex:1"><?php foreach ($cards as $c): ?><option value="<?= $c['id'] ?>"><?= $cardLabel($c) ?></option><?php endforeach; ?></select>
+            <button class="btn btn-ghost btn-sm" data-confirm="Collect <?= e(money0($p['daily_amount'])) ?> from this card every day you haven't saved yet?">Turn on auto-save</button>
+          </form>
+        <?php else: ?>
+          <span class="small muted">Never miss a day: pay once by card, tick "save it", then turn on auto-save here.</span>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
     <div class="row">
       <?php if ($p['status'] === 'active'): ?>
         <button class="btn btn-primary btn-sm" data-open="dlg-deposit" data-plan="<?= $p['id'] ?>" data-amount="<?= (float)$p['daily_amount'] ?>">Pay today's <?= money0($p['daily_amount']) ?></button>
@@ -169,6 +212,18 @@ app_header('Savings', 'savings');
     </div>
   </div>
   <?php endforeach; ?>
+
+  <?php if ($cards): ?>
+  <div class="card" id="cards">
+    <h2>Saved cards</h2>
+    <ul class="list">
+      <?php foreach ($cards as $c): ?>
+        <li><span class="tx-ic tx-in"><?= icon('cash', 18) ?></span><div class="grow"><div class="title"><?= $cardLabel($c) ?></div><div class="sub">Expires <?= e($c['expiry'] ?: '—') ?> · saved <?= fdate($c['created_at']) ?></div></div>
+          <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="remove_card"><input type="hidden" name="card_id" value="<?= $c['id'] ?>"><button class="btn btn-ghost btn-sm" data-confirm="Remove this card? Automatic payments using it will stop.">Remove</button></form></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+  <?php endif; ?>
 
   <div class="card" id="new">
     <h2>New savings plan</h2>
@@ -202,6 +257,7 @@ app_header('Savings', 'savings');
           <select name="plan_id"><?php foreach ($withdrawable as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?> (<?= money($p['balance']) ?>)</option><?php endforeach; ?></select>
         </label>
         <label>Amount<input type="number" name="amount" min="<?= setting('min_withdrawal') ?>" step="50" required></label>
+        <?php if (has_pin($u)): ?><label>PIN <span class="hint">Your 4-digit PIN</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label><?php else: ?><div class="alert alert-warn small">Set a 4-digit PIN to protect withdrawals. <a href="<?= url('profile.php#pin') ?>">Set PIN</a></div><?php endif; ?>
         <p class="muted small"><?= setting('auto_payouts') && flw_payouts_on() && $payout['bank_code'] ? 'Sent instantly to' : 'Paid to' ?> <?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?>.<?php if (flw_payouts_on() && !$payout['bank_code']): ?> <a href="<?= url('profile.php#payout') ?>">Confirm your bank</a> for faster payouts.<?php endif; ?></p>
         <button class="btn btn-primary btn-block">Request withdrawal</button>
       </form>

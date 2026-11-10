@@ -7,7 +7,22 @@
     }
   },
   "routes": [
-    { "src": "/assets/(.*)", "dest": "/assets/$1", "headers": { "cache-control": "public, max-age=3600" } },
-    { "src": "/(.*)", "dest": "/api/index.php" }
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1",
+      "headers": {
+        "cache-control": "public, max-age=3600"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.php"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/cron.php",
+      "schedule": "0 7 * * *"
+    }
   ]
 }

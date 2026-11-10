@@ -26,8 +26,9 @@ if (is_post()) {
                 . '<p>We received a request to reset your password. This link works for 1 hour:</p>'
                 . '<p><a href="' . e($link) . '">Choose a new password</a></p>'
                 . '<p>If you didn\'t ask for this, you can ignore this email; your password stays the same.</p>');
-            if (!$mailed) {
-                // No email service: staff confirm it's really the customer, then send them a link.
+            $texted = !$mailed && send_sms((int)$user['id'], $user['phone'], APP_NAME . ': reset your password here (valid 1 hour): ' . $link . ' If you did not ask for this, ignore this message.', 'password_reset', (string)$user['id'] . '-' . time());
+            if (!$mailed && !$texted) {
+                // No email or SMS service: staff confirm it's really the customer, then send them a link.
                 notify_staff('customers', 'Password reset requested', $user['full_name'] . ' (' . $user['phone'] . ') asked to reset their password.',
                     'admin/users.php?s=' . rawurlencode($user['phone']));
             }
@@ -43,6 +44,8 @@ public_header('Reset password');
       <h1>Check your messages</h1>
       <?php if (mail_enabled()): ?>
         <p class="muted">If an account matches what you entered, we've emailed a link to reset your password. It works for 1 hour. Check your spam folder too.</p>
+      <?php elseif (sms_on()): ?>
+        <p class="muted">If an account matches what you entered, we've sent a link to reset your password by SMS to your registered phone number. It works for 1 hour.</p>
       <?php else: ?>
         <p class="muted">If an account matches what you entered, our team will call or message you on your registered phone number with a link to reset your password.</p>
       <?php endif; ?>

@@ -24,6 +24,10 @@ Optional environment variables: `APP_NAME`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `A
 
 Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (for example `LucaPet Loan <no-reply@yourdomain.com>`, on a domain verified in Resend). Without a key, reset requests notify the admins, who create a one-time link under Customers → Reset link and send it by SMS or WhatsApp.
 
+**SMS (Termii).** Set `TERMII_API_KEY` and `TERMII_SENDER_ID` (a sender ID approved by Termii). Customers then get texts for approvals, pay-outs, payments, due dates, security changes and password reset links.
+
+**Daily job.** `vercel.json` runs `/cron.php` every morning (08:00 Lagos). It collects auto-save and auto-repay payments from saved cards, sends due-date reminders and re-checks stuck payments. Set `CRON_SECRET` to any long random string so only Vercel can trigger it. A super admin can also run it from Settings → Daily job.
+
 After deploying an update, open `/install.php` once: it applies any database changes and leaves your data alone.
 
 ## Flow

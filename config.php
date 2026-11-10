@@ -50,6 +50,17 @@ const SETTING_DEFAULTS = [
     'flw_payouts'          => 1,        // send approved withdrawals through Flutterwave
     'auto_payouts'         => 1,        // send withdrawals instantly through Flutterwave, without staff approval
     'auto_payout_daily_limit' => 50000, // per customer per day; above it (or 0 = no limit) staff approve
+    'auto_approve_repeat'  => 1,        // approve loans instantly for customers with an on-time repayment record
+    'auto_disburse'        => 1,        // pay instantly approved loans straight to the customer's bank
+    'sms_enabled'          => 1,        // send important alerts and reminders by SMS (needs TERMII_API_KEY)
+    'savings_sms_reminders'=> 0,        // daily SMS nudge when a plan hasn't been paid that day (costs per SMS)
+    // Borrowing limit by credit level; savings add up to the same amount again.
+    'limit_starter'        => 20000,
+    'limit_bronze'         => 50000,
+    'limit_silver'         => 100000,
+    'limit_gold'           => 250000,
+    'limit_platinum'       => 500000,
+    'last_cron_run'        => '',       // written by the daily job
     'bank_name'            => 'Your Bank Plc',
     'bank_account_name'    => 'LucaPet Loan Ltd',
     'bank_account_number'  => '0123456789',
@@ -64,6 +75,16 @@ define('DAYS_PER_MONTH', 30);                   // interest month length
 define('FLW_SECRET_KEY', env('FLW_SECRET_KEY', ''));
 define('FLW_SECRET_HASH', env('FLW_SECRET_HASH', ''));
 define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3'), '/'));
+
+// SMS through Termii (termii.com). TERMII_SENDER_ID must be approved by Termii;
+// the "dnd" channel also reaches numbers on Do-Not-Disturb but needs that approval too.
+define('TERMII_API_KEY', env('TERMII_API_KEY', ''));
+define('TERMII_SENDER_ID', env('TERMII_SENDER_ID', 'LucaPet'));
+define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
+define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
+
+// Daily scheduled job (/cron.php). Vercel sends "Authorization: Bearer <CRON_SECRET>".
+define('CRON_SECRET', env('CRON_SECRET', ''));
 
 // Password reset emails go out through Resend (resend.com) when a key is set;
 // without one, reset requests reach the admins, who send the customer a link.

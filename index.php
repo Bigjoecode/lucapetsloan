@@ -321,6 +321,6 @@ html_head(APP_TAGLINE, ['landing.css']);
   </div>
 </footer>
 
-<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
 </body>
 </html>

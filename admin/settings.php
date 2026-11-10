@@ -4,6 +4,15 @@ require_super();
 
 const TENURE_OPTIONS = [1, 2, 3, 4, 6];   // in 30-day months
 
+if (is_post() && post('action') === 'run_jobs') {
+    verify_csrf();
+    require_once __DIR__ . '/../includes/jobs.php';
+    $done = run_daily_jobs(45);
+    audit('settings.run_jobs', 'Daily job', json_encode($done));
+    flash('success', 'Daily job finished: ' . $done['auto_save'] . ' auto-saves, ' . $done['auto_repay'] . ' auto-repayments, ' . $done['failed'] . ' failed, ' . $done['reminders'] . ' reminders.');
+    redirect('admin/settings.php');
+}
+
 if (is_post()) {
     verify_csrf();
     $num = fn($k) => is_numeric(post($k)) ? (float)post($k) : -1;
@@ -20,6 +29,15 @@ if (is_post()) {
         'flw_payouts'         => (int)(bool)post('flw_payouts'),
         'auto_payouts'        => (int)(bool)post('auto_payouts'),
         'auto_payout_daily_limit' => (int)$num('auto_payout_daily_limit'),
+        'auto_approve_repeat' => (int)(bool)post('auto_approve_repeat'),
+        'auto_disburse'       => (int)(bool)post('auto_disburse'),
+        'sms_enabled'         => (int)(bool)post('sms_enabled'),
+        'savings_sms_reminders' => (int)(bool)post('savings_sms_reminders'),
+        'limit_starter'       => (int)$num('limit_starter'),
+        'limit_bronze'        => (int)$num('limit_bronze'),
+        'limit_silver'        => (int)$num('limit_silver'),
+        'limit_gold'          => (int)$num('limit_gold'),
+        'limit_platinum'      => (int)$num('limit_platinum'),
         'bank_name'           => mb_substr(post('bank_name'), 0, 80),
         'bank_account_name'   => mb_substr(post('bank_account_name'), 0, 120),
         'bank_account_number' => mb_substr(post('bank_account_number'), 0, 20),
@@ -29,6 +47,10 @@ if (is_post()) {
     if ($new['loan_late_fee_rate'] < 0 || $new['loan_late_fee_rate'] > 10) $errors[] = 'Late penalty must be between 0 and 10% per day.';
     if ($new['savings_daily_rate'] < 0 || $new['savings_daily_rate'] > 5) $errors[] = 'Savings interest must be between 0 and 5% per day.';
     if ($new['auto_payout_daily_limit'] < 0) $errors[] = 'The instant withdrawal limit cannot be negative (use 0 for no limit).';
+    $levels = [$new['limit_starter'], $new['limit_bronze'], $new['limit_silver'], $new['limit_gold'], $new['limit_platinum']];
+    $sorted = $levels;
+    sort($sorted);
+    if (min($levels) < 0 || $sorted !== $levels) $errors[] = 'Level limits must not be negative and must go up from Starter to Platinum.';
     if ($new['min_deposit'] < 1 || $new['min_withdrawal'] < 1) $errors[] = 'Minimum deposit and withdrawal must be at least 1.';
     if (!$tenures) $errors[] = 'Allow at least one loan term.';
     if (!$new['manual_deposits'] && !($new['flw_deposits'] && flw_configured())) $errors[] = 'Keep at least one way for customers to pay in.';
@@ -113,6 +135,33 @@ app_header('Settings', 'settings', 'admin');
     </div>
 
     <div class="card">
+      <h2>Credit levels &amp; instant loans</h2>
+      <div class="form">
+        <p class="muted small" style="margin:0">Customers move up a level with each on-time repayment (Bronze 1, Silver 2, Gold 4, Platinum 6) and down one for each late one. Their limit is the level amount plus their savings, up to the level amount again.</p>
+        <div class="form-grid">
+          <?php foreach (CREDIT_LEVELS as [$name]): $k = 'limit_' . strtolower($name); ?>
+            <label><?= e($name) ?><input type="number" name="<?= $k ?>" min="0" step="1000" required value="<?= setting($k) ?>"></label>
+          <?php endforeach; ?>
+        </div>
+        <label class="check"><input type="checkbox" name="auto_approve_repeat" value="1" <?= $on('auto_approve_repeat') ?>><span class="small"><strong>Instant approval</strong> for customers whose last loan was repaid on time (within their limit)</span></label>
+        <label class="check"><input type="checkbox" name="auto_disburse" value="1" <?= $on('auto_disburse') ?>><span class="small">Pay instantly approved loans straight to the customer's bank through Flutterwave</span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>SMS</h2>
+      <?php if (TERMII_API_KEY === ''): ?>
+        <div class="alert alert-warn">Not connected. Add <code>TERMII_API_KEY</code> and <code>TERMII_SENDER_ID</code> (approved by Termii) to the hosting environment variables.</div>
+      <?php else: ?>
+        <div class="alert alert-success" style="margin-bottom:.8rem">Termii connected · sender <strong><?= e(TERMII_SENDER_ID) ?></strong> · <?= (int)q_val('SELECT COUNT(*) FROM messages_log WHERE status = "sent" AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)') ?> sent in the last 30 days</div>
+      <?php endif; ?>
+      <div class="form">
+        <label class="check"><input type="checkbox" name="sms_enabled" value="1" <?= $on('sms_enabled') ?>><span class="small">Text customers about approvals, pay-outs, payments, due dates and security changes</span></label>
+        <label class="check"><input type="checkbox" name="savings_sms_reminders" value="1" <?= $on('savings_sms_reminders') ?>><span class="small">Also text a daily savings reminder when a plan hasn't been paid (one SMS per customer per day)</span></label>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Bank transfer details</h2>
       <div class="form">
         <label class="check"><input type="checkbox" name="manual_deposits" value="1" <?= $on('manual_deposits') ?>><span class="small">Customers can also pay by bank transfer or agent and enter a reference for staff to confirm</span></label>
@@ -126,4 +175,9 @@ app_header('Settings', 'settings', 'admin');
   </div>
   <div><button class="btn btn-primary" data-confirm="Save these settings? Every change is recorded in the audit log.">Save settings</button></div>
 </form>
+
+<div class="card row between" style="margin-top:1rem">
+  <div><h2 style="margin:0">Daily job</h2><span class="muted small">Collects auto-save and auto-repay payments, sends reminders and re-checks stuck payments every morning. Last run: <?= e(setting('last_cron_run') ?: 'never') ?></span></div>
+  <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="run_jobs"><button class="btn btn-ghost btn-sm" data-confirm="Run the daily job now? It charges saved cards that are due today.">Run now</button></form>
+</div>
 <?php app_footer();

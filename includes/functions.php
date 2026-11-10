@@ -282,6 +282,50 @@ function audit(string $action, string $target = '', string $details = '', ?int $
 }
 
 /* ------------------------------------------------------------------ */
+/*  Transaction PIN                                                    */
+/* ------------------------------------------------------------------ */
+
+function has_pin(array $u): bool
+{
+    return !empty($u['pin_hash']);
+}
+
+/** Reject PINs that are easy to guess, like 1111 or 1234. */
+function weak_pin(string $pin): bool
+{
+    return count(array_unique(str_split($pin))) === 1 || str_contains('01234567890', $pin) || str_contains('09876543210', $pin);
+}
+
+/**
+ * Check the PIN before money leaves an account. Five wrong tries lock it for
+ * 30 minutes and warn the customer by SMS.
+ */
+function check_pin(array $u, string $pin): void
+{
+    $row = q_one('SELECT pin_hash, pin_fails, pin_locked_until FROM users WHERE id = ?', [$u['id']]);
+    if (empty($row['pin_hash'])) {
+        throw new UserError('Set your 4-digit PIN in Profile first.');
+    }
+    if ($row['pin_locked_until'] && strtotime($row['pin_locked_until']) > time()) {
+        throw new UserError('Too many wrong PINs. Try again after ' . date('g:i a', strtotime($row['pin_locked_until'])) . ', or reset your PIN in Profile.');
+    }
+    if (password_verify($pin, $row['pin_hash'])) {
+        if ($row['pin_fails']) {
+            q('UPDATE users SET pin_fails = 0 WHERE id = ?', [$u['id']]);
+        }
+        return;
+    }
+    $fails = (int)$row['pin_fails'] + 1;
+    if ($fails >= 5) {
+        q('UPDATE users SET pin_fails = 0, pin_locked_until = DATE_ADD(NOW(), INTERVAL 30 MINUTE) WHERE id = ?', [$u['id']]);
+        notify((int)$u['id'], 'PIN locked', 'Someone entered a wrong PIN 5 times, so payments are locked for 30 minutes. If this wasn\'t you, change your password now.', 'profile.php', true);
+        throw new UserError('Wrong PIN. Payments are locked for 30 minutes.');
+    }
+    q('UPDATE users SET pin_fails = ? WHERE id = ?', [$fails, $u['id']]);
+    throw new UserError('Wrong PIN. ' . (5 - $fails) . ' tr' . (5 - $fails === 1 ? 'y' : 'ies') . ' left.');
+}
+
+/* ------------------------------------------------------------------ */
 /*  Settings                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -390,9 +434,13 @@ function badge(string $status): string
 /*  Notifications                                                      */
 /* ------------------------------------------------------------------ */
 
-function notify(int $userId, string $title, string $body = '', string $link = ''): void
+/** In-app notification; with $sms the customer also gets it by text message. */
+function notify(int $userId, string $title, string $body = '', string $link = '', bool $sms = false): void
 {
     q('INSERT INTO notifications (user_id, title, body, link) VALUES (?, ?, ?, ?)', [$userId, $title, $body, $link]);
+    if ($sms) {
+        sms_user($userId, preg_replace('/[^\p{L}\p{N}\p{P}\s₦]/u', '', $title), $body);   // emoji cost extra SMS pages
+    }
 }
 
 function unread_count(int $userId): int
@@ -473,6 +521,18 @@ function run_schema(): array
         "ALTER TABLE transactions MODIFY status ENUM('pending','approved','rejected','processing') NOT NULL DEFAULT 'pending'",
         'ALTER TABLE transactions ADD COLUMN provider_ref VARCHAR(80) NULL',
         'ALTER TABLE transactions ADD INDEX idx_tx_reference (reference)',
+        'ALTER TABLE users ADD COLUMN pin_hash VARCHAR(255) NULL',
+        'ALTER TABLE users ADD COLUMN pin_fails TINYINT UNSIGNED NOT NULL DEFAULT 0',
+        'ALTER TABLE users ADD COLUMN pin_locked_until DATETIME NULL',
+        'ALTER TABLE users ADD COLUMN credit_limit_override DECIMAL(14,2) NULL',
+        'ALTER TABLE savings_plans ADD COLUMN auto_save TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE savings_plans ADD COLUMN auto_card_id INT UNSIGNED NULL',
+        'ALTER TABLE savings_plans ADD COLUMN auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0',
+        'ALTER TABLE loans ADD COLUMN auto_repay TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE loans ADD COLUMN auto_card_id INT UNSIGNED NULL',
+        'ALTER TABLE loans ADD COLUMN auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0',
+        'ALTER TABLE loans ADD COLUMN auto_approved TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE transactions ADD COLUMN save_card TINYINT(1) NOT NULL DEFAULT 0',
     ];
     foreach ($migrations as $sql) {
         try {
@@ -795,6 +855,83 @@ function loan_series(array $loan): array
     return $out;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Credit levels                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Levels and the on-time repayments needed to reach each one. */
+const CREDIT_LEVELS = [['Starter', 0], ['Bronze', 1], ['Silver', 2], ['Gold', 4], ['Platinum', 6]];
+
+/**
+ * Where a customer stands: level from on-time repayments (each late
+ * repayment drops a level, any default blocks borrowing), and a limit of the
+ * level's base amount plus their savings, up to the base again.
+ */
+function credit_profile(array $u): array
+{
+    $closed = q('SELECT status, due_date, closed_at FROM loans WHERE user_id = ? AND status IN ("repaid","defaulted") ORDER BY closed_at', [$u['id']])->fetchAll();
+    $onTime = $late = $defaults = 0;
+    $lastOnTime = null;
+    foreach ($closed as $l) {
+        if ($l['status'] === 'defaulted') {
+            $defaults++;
+        } elseif ($l['due_date'] && substr((string)$l['closed_at'], 0, 10) <= $l['due_date']) {
+            $onTime++;
+            $lastOnTime = true;
+        } else {
+            $late++;
+            $lastOnTime = false;
+        }
+    }
+    $level = 0;
+    foreach (CREDIT_LEVELS as $i => [, $need]) {
+        if ($onTime >= $need) {
+            $level = $i;
+        }
+    }
+    $level = max(0, $level - $late);
+    [$name] = CREDIT_LEVELS[$level];
+    $base = (float)setting('limit_' . strtolower($name));
+    $savings = savings_total((int)$u['id']);
+    $boost = min($savings, $base);
+    $limit = $u['credit_limit_override'] !== null ? (float)$u['credit_limit_override'] : $base + $boost;
+    $next = CREDIT_LEVELS[$level + 1] ?? null;
+    return [
+        'level'        => $level,
+        'name'         => $name,
+        'base'         => $base,
+        'savings_boost'=> $boost,
+        'limit'        => $defaults || $u['kyc_status'] !== 'verified' ? 0.0 : $limit,
+        'override'     => $u['credit_limit_override'] !== null,
+        'on_time'      => $onTime,
+        'late'         => $late,
+        'defaults'     => $defaults,
+        'blocked'      => $defaults > 0,
+        'trusted'      => $onTime > 0 && $lastOnTime === true && !$defaults,   // may get instant approval
+        'next_name'    => $next[0] ?? null,
+        'needed'       => $next ? max(1, $next[1] - $onTime + $late) : 0,
+    ];
+}
+
+/**
+ * Start a loan's clock: mark it active, set the due date and record the
+ * pay-out. Used for manual pay-outs and when a Flutterwave transfer lands.
+ */
+function activate_loan(int $loanId, string $date, ?int $staffId, string $ref, string $method, ?int $txId = null): void
+{
+    $loan = q_one('SELECT * FROM loans WHERE id = ?', [$loanId]);
+    $when = $date . ' ' . date('H:i:s');
+    $due = date('Y-m-d', strtotime($date . ' +' . ((int)$loan['tenure_months'] * DAYS_PER_MONTH) . ' days'));
+    q('UPDATE loans SET status = "active", disbursed_at = ?, due_date = ? WHERE id = ?', [$when, $due, $loanId]);
+    if ($txId) {
+        q('UPDATE transactions SET status = "approved", processed_at = NOW() WHERE id = ?', [$txId]);
+    } else {
+        q('INSERT INTO transactions (user_id, type, amount, method, reference, status, loan_id, note, processed_by, processed_at, created_at) VALUES (?, "loan_disbursement", ?, ?, ?, "approved", ?, ?, ?, NOW(), ?)',
+            [$loan['user_id'], $loan['amount'], $method, $ref, $loanId, 'Paid to customer bank account', $staffId, $when]);
+    }
+    notify((int)$loan['user_id'], 'Loan paid out 💸', money0($loan['amount']) . ' has been sent to your bank account. Repay ' . money0((float)$loan['amount'] * (1 + (float)$loan['interest_rate'] / 100 * (int)$loan['tenure_months'])) . ' by ' . fdate($due) . '.', 'loan.php?id=' . $loanId, true);
+}
+
 function has_open_loan(int $userId): ?array
 {
     return q_one('SELECT * FROM loans WHERE user_id = ? AND status IN ("pending","approved","active") ORDER BY id DESC LIMIT 1', [$userId]);
@@ -813,7 +950,7 @@ function apply_loan_payment(int $loanId, float $amount): array
     if ($snap['payoff'] <= 0.009) {
         q('UPDATE loans SET status = "repaid", closed_at = NOW() WHERE id = ?', [$loanId]);
         $loan['status'] = 'repaid';
-        notify((int)$loan['user_id'], 'Loan fully repaid 🎉', 'Loan #' . $loanId . ' is closed. Thank you for paying on time.', 'loan.php?id=' . $loanId);
+        notify((int)$loan['user_id'], 'Loan fully repaid 🎉', 'Loan #' . $loanId . ' is closed. Thank you for paying on time.', 'loan.php?id=' . $loanId, true);
     }
     return $loan;
 }
@@ -857,7 +994,7 @@ function process_transaction(int $txId, bool $approve, ?int $adminId, string $no
                     q('UPDATE savings_plans SET balance = balance + ? WHERE id = ?', [$amount, $tx['savings_plan_id']]);
                 }
                 notify($uid, $approve ? 'Withdrawal paid' : 'Withdrawal declined',
-                    money($amount) . ($approve ? ' has been sent to your bank account.' : ' was returned to your savings. ' . $note), 'savings.php');
+                    money($amount) . ($approve ? ' has been sent to your bank account.' : ' was returned to your savings. ' . $note), 'savings.php', true);
                 break;
 
             case 'loan_repayment':
@@ -866,7 +1003,7 @@ function process_transaction(int $txId, bool $approve, ?int $adminId, string $no
                     apply_loan_payment((int)$tx['loan_id'], $amount);
                 }
                 notify($uid, $approve ? 'Repayment received' : 'Repayment not confirmed',
-                    money($amount) . ($approve ? ' was applied to loan #' . $tx['loan_id'] . '.' : ' could not be verified. ' . $note), 'loan.php?id=' . $tx['loan_id']);
+                    money($amount) . ($approve ? ' was applied to loan #' . $tx['loan_id'] . '.' : ' could not be verified. ' . $note), 'loan.php?id=' . $tx['loan_id'], true);
                 break;
         }
 

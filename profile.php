@@ -34,9 +34,22 @@ if (is_post()) {
             } else {
                 q('UPDATE kyc SET bank_code = ?, bank_name = ?, account_number = ?, account_name = ? WHERE user_id = ?', [$code, $banks[$code], $number, $name, $u['id']]);
                 audit('customer.payout_account', 'Customer #' . $u['id'], $banks[$code] . ' ' . $number . ' (' . $name . ')');
-                notify((int)$u['id'], 'Payout account changed', 'Withdrawals now go to ' . $banks[$code] . ' ' . $number . '. If this was not you, call ' . SUPPORT_PHONE . '.');
+                notify((int)$u['id'], 'Payout account changed', 'Withdrawals now go to ' . $banks[$code] . ' ' . $number . '. If this was not you, call ' . SUPPORT_PHONE . '.', '', true);
                 flash('success', 'Payout account saved: ' . $name . '.');
             }
+        }
+    } elseif (post('action') === 'pin') {
+        $pin = (string)post('pin');
+        if (!password_verify((string)post('current'), $u['password_hash'])) {
+            flash('error', 'Current password is incorrect.');
+        } elseif (!preg_match('/^\d{4}$/', $pin) || $pin !== (string)post('pin2')) {
+            flash('error', 'Enter the same 4 digits twice.');
+        } elseif (weak_pin($pin)) {
+            flash('error', 'That PIN is too easy to guess. Avoid repeated or consecutive digits.');
+        } else {
+            q('UPDATE users SET pin_hash = ?, pin_fails = 0, pin_locked_until = NULL WHERE id = ?', [password_hash($pin, PASSWORD_DEFAULT), $u['id']]);
+            notify((int)$u['id'], has_pin($u) ? 'PIN changed' : 'PIN set', 'Your payment PIN was ' . (has_pin($u) ? 'changed' : 'set') . '. If this was not you, call ' . SUPPORT_PHONE . '.', 'profile.php', has_pin($u));
+            flash('success', 'PIN saved. You will use it to withdraw and pay from savings.');
         }
     } elseif (post('action') === 'password') {
         if (!password_verify((string)post('current'), $u['password_hash'])) {
@@ -68,6 +81,19 @@ app_header('Profile', 'profile');
       <label>Phone<input type="tel" name="phone" required value="<?= e($u['phone']) ?>"></label>
       <label>Email<input type="email" name="email" required value="<?= e($u['email']) ?>"></label>
       <button class="btn btn-primary">Save</button>
+    </form>
+  </div>
+  <div class="card" id="pin">
+    <h2><?= has_pin($u) ? 'Change your PIN' : 'Set your payment PIN' ?></h2>
+    <p class="muted small">You'll enter this 4-digit PIN to withdraw or pay from your savings, so nobody else can move your money even if they open your phone.</p>
+    <form method="post" class="form">
+      <?= csrf_field() ?><input type="hidden" name="action" value="pin">
+      <div class="form-grid">
+        <label>New PIN<input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" required autocomplete="off"></label>
+        <label>Confirm PIN<input type="password" name="pin2" inputmode="numeric" pattern="\d{4}" maxlength="4" required autocomplete="off"></label>
+      </div>
+      <label>Account password<input type="password" name="current" required autocomplete="current-password"></label>
+      <button class="btn btn-primary"><?= has_pin($u) ? 'Change PIN' : 'Set PIN' ?></button>
     </form>
   </div>
   <div class="card">

@@ -61,6 +61,30 @@ function tx_row(array $t, bool $showUser = false): string
         . ($t['status'] !== 'approved' ? badge($t['status']) : '') . '</div></li>';
 }
 
+/** The customer's credit level, limit and what unlocks the next level. */
+function credit_card_html(array $c): string
+{
+    $steps = '';
+    foreach (CREDIT_LEVELS as $i => [$name]) {
+        $steps .= '<span class="lvl' . ($i <= $c['level'] ? ' on' : '') . '" title="' . e($name) . '"></span>';
+    }
+    if ($c['blocked']) {
+        $hint = 'Borrowing is paused after a defaulted loan. Talk to us to fix it.';
+    } elseif ($c['override']) {
+        $hint = 'Limit set by our team.';
+    } elseif ($c['next_name']) {
+        $hint = 'Repay ' . $c['needed'] . ' more loan' . ($c['needed'] === 1 ? '' : 's') . ' on time to reach <strong>' . e($c['next_name']) . '</strong> (' . e(money0(setting('limit_' . strtolower($c['next_name'])))) . ' base).';
+    } else {
+        $hint = 'Top level. Thank you for being a great customer.';
+    }
+    return '<div class="card credit-card">'
+        . '<div class="row between"><div class="stat"><span class="k">' . icon('shield', 16) . ' Your borrowing limit</span><span class="v">' . e(money0($c['limit'])) . '</span>'
+        . '<span class="s">' . e($c['name']) . ' level · ' . $c['on_time'] . ' on-time repayment' . ($c['on_time'] === 1 ? '' : 's') . ($c['savings_boost'] > 0 && !$c['override'] ? ' · +' . e(money0($c['savings_boost'])) . ' from your savings' : '') . '</span></div>'
+        . '<div class="levels">' . $steps . '</div></div>'
+        . '<p class="small muted" style="margin:.5rem 0 0">' . $hint . ' Your savings raise your limit too, up to the base amount again.' . ($c['trusted'] && setting('auto_approve_repeat') ? ' <strong>You qualify for instant approval.</strong>' : '') . '</p>'
+        . '</div>';
+}
+
 function render_flashes(): string
 {
     $html = '';
@@ -73,16 +97,21 @@ function render_flashes(): string
 function html_head(string $title, array $extraCss = []): void
 {
     ?><!doctype html>
-<html lang="en" data-currency="<?= e(CURRENCY) ?>">
+<html lang="en" data-currency="<?= e(CURRENCY) ?>" data-base="<?= e(BASE_URL) ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b4f3c">
+<link rel="manifest" href="<?= url('manifest.php') ?>">
+<link rel="icon" type="image/png" sizes="192x192" href="<?= url('assets/icons/icon-192.png') ?>">
+<link rel="apple-touch-icon" href="<?= url('assets/icons/apple-touch-icon.png') ?>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= e($title) ?> · <?= e(APP_NAME) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=2">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=3">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>
@@ -122,7 +151,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
 </body>
 </html>
 <?php
@@ -182,6 +211,7 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
       <a class="brand brand-mobile" href="<?= url($area === 'admin' ? 'admin/index.php' : 'dashboard.php') ?>"><?= brand_mark() ?></a>
       <h1 class="page-title"><?= e($title) ?></h1>
       <div class="top-actions">
+        <button type="button" class="btn btn-accent btn-sm" data-install hidden><?= icon('down', 16) ?> Install app</button>
         <a class="icon-btn" href="<?= url('notifications.php') ?>" aria-label="Notifications"><?= icon('bell') ?><?php if ($unread): ?><span class="dot"><?= $unread > 9 ? '9+' : $unread ?></span><?php endif; ?></a>
         <a class="avatar" href="<?= url('profile.php') ?>" title="<?= e($u['full_name']) ?>"><?= e(initials($u['full_name'])) ?></a>
       </div>
@@ -206,7 +236,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=4"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=5"></script>
 </body>
 </html>
 <?php

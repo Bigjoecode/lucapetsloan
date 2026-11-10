@@ -132,6 +132,7 @@ function flw_settle_charge(array $data): ?array
     try {
         if ($paidOk) {
             process_transaction((int)$tx['id'], true, null, 'Paid online · Flutterwave #' . ($data['id'] ?? ''));
+            flw_save_card($tx, $data);
             audit('payment.flutterwave', ucfirst(label($tx['type'])) . ' #' . $tx['id'], money($tx['amount']) . ' confirmed by Flutterwave', null);
         } elseif ($status === 'successful') {
             // Paid, but not what we asked for: leave it for staff to check.
@@ -234,28 +235,82 @@ function auto_payout_hold(int $userId, int $txId): ?string
     return null;
 }
 
-/** Apply a transfer result (from the webhook or a status check). */
+/**
+ * Pay an approved loan to the customer's bank. The loan starts (interest,
+ * due date) only when Flutterwave confirms the transfer landed.
+ */
+function flw_send_loan(int $loanId, ?int $staffId): string
+{
+    $loan = q_one('SELECT * FROM loans WHERE id = ?', [$loanId]);
+    if (!$loan || $loan['status'] !== 'approved') {
+        throw new UserError('Only approved loans can be paid out.');
+    }
+    if (q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status IN ("processing","approved")', [$loanId])) {
+        throw new UserError('This loan has already been sent.');
+    }
+    $kyc = q_one('SELECT bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$loan['user_id']]);
+    if (!$kyc || empty($kyc['bank_code'])) {
+        throw new UserError('The customer has no payout bank selected, so the loan has to be paid manually.');
+    }
+    $ref = flw_reference('LPL-LN');
+    q('INSERT INTO transactions (user_id, type, amount, method, reference, status, loan_id, note, processed_by) VALUES (?, "loan_disbursement", ?, "flutterwave", ?, "processing", ?, ?, ?)',
+        [$loan['user_id'], $loan['amount'], $ref, $loanId, 'To ' . $kyc['account_number'] . ' (' . $kyc['account_name'] . ')', $staffId]);
+    $txId = (int)db()->lastInsertId();
+    $res = flw_request('POST', '/transfers', [
+        'account_bank'   => $kyc['bank_code'],
+        'account_number' => $kyc['account_number'],
+        'amount'         => round((float)$loan['amount'], 2),
+        'currency'       => 'NGN',
+        'debit_currency' => 'NGN',
+        'narration'      => APP_NAME . ' loan #' . $loanId,
+        'reference'      => $ref,
+        'callback_url'   => absolute_url('flw_webhook.php'),
+    ]);
+    if (!$res['ok']) {
+        q('UPDATE transactions SET status = "rejected", admin_note = ? WHERE id = ?', ['Transfer not accepted: ' . mb_substr(flw_message($res, 'no response'), 0, 200), $txId]);
+        throw new UserError('Flutterwave did not accept the transfer: ' . flw_message($res, 'no response') . '. Nothing was sent.');
+    }
+    q('UPDATE transactions SET provider_ref = ? WHERE id = ?', [(string)($res['body']['data']['id'] ?? ''), $txId]);
+    audit('loan.flw_payout', 'Loan #' . $loanId, money($loan['amount']) . ' sent via Flutterwave, ref ' . $ref, $staffId);
+    return 'Loan of ' . money($loan['amount']) . ' sent through Flutterwave. It starts as soon as the bank confirms.';
+}
+
+/** Apply a transfer result (withdrawal or loan pay-out) from the webhook or a status check. */
 function flw_settle_transfer(array $data): ?array
 {
-    $tx = q_one('SELECT * FROM transactions WHERE type = "withdrawal" AND (reference = ? OR (provider_ref = ? AND provider_ref <> ""))',
+    $tx = q_one('SELECT * FROM transactions WHERE type IN ("withdrawal","loan_disbursement") AND (reference = ? OR (provider_ref = ? AND provider_ref <> ""))',
         [(string)($data['reference'] ?? ''), (string)($data['id'] ?? '')]);
     if (!$tx || $tx['status'] !== 'processing') {
         return $tx;
     }
     $status = strtoupper((string)($data['status'] ?? ''));
-    q('UPDATE transactions SET status = "pending" WHERE id = ? AND status = "processing"', [$tx['id']]);   // process_transaction settles pending rows
-    try {
-        if ($status === 'SUCCESSFUL') {
-            process_transaction((int)$tx['id'], true, $tx['processed_by'] ? (int)$tx['processed_by'] : null, 'Paid via Flutterwave');
+    $reason = mb_substr((string)($data['complete_message'] ?? 'no reason given'), 0, 150);
+    $staffId = $tx['processed_by'] ? (int)$tx['processed_by'] : null;
+
+    if ($tx['type'] === 'loan_disbursement') {
+        // Claim the row so the webhook and a status check can't both start the loan.
+        if ($status === 'SUCCESSFUL' && q('UPDATE transactions SET status = "pending" WHERE id = ? AND status = "processing"', [$tx['id']])->rowCount()) {
+            activate_loan((int)$tx['loan_id'], date('Y-m-d'), $staffId, (string)$tx['reference'], 'flutterwave', (int)$tx['id']);
         } elseif ($status === 'FAILED') {
-            process_transaction((int)$tx['id'], false, null, 'Bank transfer failed: ' . mb_substr((string)($data['complete_message'] ?? 'no reason given'), 0, 150));
-        } else {
-            q('UPDATE transactions SET status = "processing" WHERE id = ?', [$tx['id']]);   // still in flight
+            q('UPDATE transactions SET status = "rejected", admin_note = ?, processed_at = NOW() WHERE id = ? AND status = "processing"', ['Bank transfer failed: ' . $reason, $tx['id']]);
+            notify_staff('loans', 'Loan pay-out failed', 'Loan #' . $tx['loan_id'] . ': ' . $reason . '. Send it again or pay manually.', 'admin/loans.php?id=' . $tx['loan_id']);
         }
-    } catch (UserError) {
+    } else {
+        q('UPDATE transactions SET status = "pending" WHERE id = ? AND status = "processing"', [$tx['id']]);   // process_transaction settles pending rows
+        try {
+            if ($status === 'SUCCESSFUL') {
+                process_transaction((int)$tx['id'], true, $staffId, 'Paid via Flutterwave');
+            } elseif ($status === 'FAILED') {
+                process_transaction((int)$tx['id'], false, null, 'Bank transfer failed: ' . $reason);
+            } else {
+                q('UPDATE transactions SET status = "processing" WHERE id = ?', [$tx['id']]);   // still in flight
+            }
+        } catch (UserError) {
+        }
     }
     if (in_array($status, ['SUCCESSFUL', 'FAILED'], true)) {
-        audit('withdrawal.' . strtolower($status), 'Withdrawal #' . $tx['id'], 'Flutterwave transfer ' . ($data['id'] ?? ''), null);
+        $isWd = $tx['type'] === 'withdrawal';
+        audit(($isWd ? 'withdrawal.' : 'loan.payout_') . strtolower($status), $isWd ? 'Withdrawal #' . $tx['id'] : 'Loan #' . $tx['loan_id'], 'Flutterwave transfer ' . ($data['id'] ?? ''), null);
     }
     return q_one('SELECT * FROM transactions WHERE id = ?', [$tx['id']]);
 }
@@ -263,14 +318,71 @@ function flw_settle_transfer(array $data): ?array
 /** Ask Flutterwave for a transfer's current status and apply it. */
 function flw_check_transfer(int $txId): string
 {
-    $tx = q_one('SELECT * FROM transactions WHERE id = ? AND type = "withdrawal"', [$txId]);
+    $tx = q_one('SELECT * FROM transactions WHERE id = ? AND type IN ("withdrawal","loan_disbursement")', [$txId]);
     if (!$tx || $tx['status'] !== 'processing' || !$tx['provider_ref']) {
-        throw new UserError('Nothing to check for that withdrawal.');
+        throw new UserError('Nothing to check for that transfer.');
     }
     $res = flw_request('GET', '/transfers/' . rawurlencode($tx['provider_ref']));
     if (!$res['ok']) {
         throw new UserError('Could not reach Flutterwave: ' . flw_message($res, 'try again shortly.'));
     }
     $after = flw_settle_transfer($res['body']['data'] ?? []);
-    return 'Withdrawal #' . $txId . ' is ' . label($after['status'] ?? 'processing') . '.';
+    return label($tx['type']) . ' #' . $txId . ' is ' . label($after['status'] ?? 'processing') . '.';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Saved cards: automatic savings and repayments                      */
+/* ------------------------------------------------------------------ */
+
+/** Keep the card from a verified charge if the customer asked us to. */
+function flw_save_card(array $tx, array $data): void
+{
+    $card = $data['card'] ?? null;
+    if (!$tx['save_card'] || !is_array($card) || empty($card['token'])) {
+        return;
+    }
+    if (q_val('SELECT 1 FROM payment_cards WHERE user_id = ? AND token = ? AND removed_at IS NULL', [$tx['user_id'], $card['token']])) {
+        return;
+    }
+    $last4 = substr((string)($card['last_4digits'] ?? ''), -4);
+    q('INSERT INTO payment_cards (user_id, token, email, brand, last4, expiry) VALUES (?,?,?,?,?,?)', [
+        $tx['user_id'], $card['token'], (string)($data['customer']['email'] ?? ''),
+        mb_substr((string)($card['type'] ?? 'Card'), 0, 40), $last4, mb_substr((string)($card['expiry'] ?? ''), 0, 7),
+    ]);
+    notify((int)$tx['user_id'], 'Card saved', 'Your card ending ' . $last4 . ' can now pay your daily savings and loan automatically. Turn it on from Savings or your loan page.', 'savings.php');
+}
+
+function user_cards(int $userId): array
+{
+    return q('SELECT * FROM payment_cards WHERE user_id = ? AND removed_at IS NULL ORDER BY id DESC', [$userId])->fetchAll();
+}
+
+/**
+ * Charge a saved card for a new transaction (deposit or repayment). Returns
+ * the transaction afterwards: approved, rejected, or still pending when the
+ * bank answers later (the webhook settles it then).
+ */
+function flw_charge_card(array $card, int $userId, string $type, float $amount, ?int $planId, ?int $loanId, string $note): array
+{
+    $ref = flw_reference($type === 'deposit' ? 'LPL-AUTO' : 'LPL-AREP');
+    q('INSERT INTO transactions (user_id, type, amount, method, reference, savings_plan_id, loan_id, note) VALUES (?, ?, ?, "flutterwave", ?, ?, ?, ?)',
+        [$userId, $type, round($amount, 2), $ref, $planId, $loanId, $note]);
+    $txId = (int)db()->lastInsertId();
+    $res = flw_request('POST', '/tokenized-charges', [
+        'token'     => $card['token'],
+        'currency'  => 'NGN',
+        'country'   => 'NG',
+        'amount'    => round($amount, 2),
+        'email'     => $card['email'],
+        'tx_ref'    => $ref,
+        'narration' => APP_NAME . ' ' . $note,
+    ]);
+    $data = $res['body']['data'] ?? [];
+    if ($res['ok'] && !empty($data['id']) && ($verified = flw_verify((string)$data['id']))) {
+        flw_settle_charge($verified);
+    } elseif (!$res['ok']) {
+        q('UPDATE transactions SET status = "rejected", admin_note = ?, processed_at = NOW() WHERE id = ? AND status = "pending"',
+            [mb_substr('Card charge failed: ' . flw_message($res, 'no response'), 0, 255), $txId]);
+    }
+    return q_one('SELECT * FROM transactions WHERE id = ?', [$txId]);
 }

@@ -15,6 +15,19 @@ if (is_post()) {
         redirect('admin/kyc.php');
     }
 
+    if ($action === 'credit_limit') {
+        if (!can('loans')) {
+            flash('error', 'Only staff who handle loans can change limits.');
+        } else {
+            $raw = trim((string)post('credit_limit'));
+            $limit = $raw === '' ? null : max(0, round((float)$raw, 2));
+            q('UPDATE users SET credit_limit_override = ? WHERE id = ?', [$limit, $uid]);
+            audit('customer.credit_limit', 'User #' . $uid, $limit === null ? 'back to automatic' : money0($limit) . ' · ' . mb_substr(post('reason'), 0, 200));
+            flash('success', $limit === null ? 'Limit is automatic again.' : 'Limit set to ' . money0($limit) . '.');
+        }
+        redirect('admin/kyc.php?id=' . $uid);
+    }
+
     if ($action === 'schedule') {
         $date = post('visit_date');
         $time = post('visit_time');
@@ -26,7 +39,7 @@ if (is_post()) {
                 [$date, mb_substr($time, 0, 20), mb_substr($officer, 0, 120), mb_substr(post('officer_phone'), 0, 30), $uid]);
             q('UPDATE users SET kyc_status = "visit_scheduled" WHERE id = ?', [$uid]);
             audit('kyc.schedule_visit', 'User #' . $uid, $date . ' ' . $time . ' · ' . $officer);
-            notify($uid, 'Home visit scheduled', 'Officer ' . $officer . ' will visit on ' . fdate($date, 'D, M j') . ' (' . $time . ').', 'verification.php');
+            notify($uid, 'Home visit scheduled', 'Officer ' . $officer . ' will visit on ' . fdate($date, 'D, M j') . ' (' . $time . ').', 'verification.php', true);
             flash('success', 'Visit scheduled and the customer has been notified.');
         }
     } elseif ($action === 'outcome') {
@@ -38,7 +51,7 @@ if (is_post()) {
             q('UPDATE kyc SET visit_notes = ?, reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL WHERE user_id = ?', [$fullNotes, $admin['id'], $uid]);
             q('UPDATE users SET kyc_status = "verified" WHERE id = ?', [$uid]);
             audit('kyc.verify', 'User #' . $uid, $cust['full_name']);
-            notify($uid, 'You are verified ✅', 'Your home visit is complete. You can now apply for a loan.', 'loans.php#apply');
+            notify($uid, 'You are verified ✅', 'Your home visit is complete. You can now apply for a loan.', 'loans.php#apply', true);
             flash('success', $cust['full_name'] . ' is now verified.');
         } elseif ($result === 'rejected') {
             $reason = mb_substr(post('rejection_reason'), 0, 255);
@@ -49,7 +62,7 @@ if (is_post()) {
             q('UPDATE kyc SET visit_notes = ?, rejection_reason = ?, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?', [$fullNotes, $reason, $admin['id'], $uid]);
             q('UPDATE users SET kyc_status = "rejected" WHERE id = ?', [$uid]);
             audit('kyc.reject', 'User #' . $uid, $reason);
-            notify($uid, 'Verification not approved', $reason, 'verification.php');
+            notify($uid, 'Verification not approved', $reason, 'verification.php', true);
             flash('success', 'Verification rejected and the customer has been notified.');
         }
     }
@@ -65,6 +78,8 @@ if ($id) {
         redirect('admin/kyc.php');
     }
     $savings = savings_total($id);
+    $credit = credit_profile(q_one('SELECT * FROM users WHERE id = ?', [$id]));
+    $override = q_val('SELECT credit_limit_override FROM users WHERE id = ?', [$id]);
     $daysSaved = (int)q_val('SELECT COUNT(DISTINCT DATE(created_at)) FROM transactions WHERE user_id = ? AND type = "deposit" AND status = "approved"', [$id]);
     $mapQ = $k['latitude'] ? $k['latitude'] . ',' . $k['longitude'] : $k['address'] . ', ' . $k['city'] . ', ' . $k['state'] . ', Nigeria';
     $docUrl = fn($d) => url('file.php?u=' . $id . '&doc=' . $d);
@@ -169,6 +184,25 @@ if ($id) {
           </form>
         </div>
         <?php endif; ?>
+
+        <div class="card">
+          <h2>Credit</h2>
+          <dl class="kv">
+            <dt>Level</dt><dd><?= e($credit['name']) ?> · <?= $credit['on_time'] ?> on time, <?= $credit['late'] ?> late, <?= $credit['defaults'] ?> defaulted</dd>
+            <dt>Limit now</dt><dd><strong><?= money0($credit['limit']) ?></strong><?= $credit['override'] ? ' (set by staff)' : ' (' . money0($credit['base']) . ' level + ' . money0($credit['savings_boost']) . ' savings)' ?></dd>
+            <dt>Instant approval</dt><dd><?= $credit['trusted'] && setting('auto_approve_repeat') ? 'Yes' : 'No, staff review' ?></dd>
+          </dl>
+          <?php if (can('loans')): ?>
+            <form method="post" class="form" style="margin-top:.8rem">
+              <?= csrf_field() ?><input type="hidden" name="user_id" value="<?= $id ?>"><input type="hidden" name="action" value="credit_limit">
+              <div class="form-grid">
+                <label>Custom limit <span class="hint">Empty = automatic</span><input type="number" name="credit_limit" min="0" step="1000" value="<?= $override !== null ? (float)$override : '' ?>"></label>
+                <label>Reason<input name="reason" maxlength="200" placeholder="e.g. Long-time trader, strong income"></label>
+              </div>
+              <button class="btn btn-ghost btn-sm">Save limit</button>
+            </form>
+          <?php endif; ?>
+        </div>
 
         <?php if ($k['visit_notes'] || $k['reviewed_at']): ?>
         <div class="card">

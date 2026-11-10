@@ -10,6 +10,20 @@ if (!$loan) {
     redirect('loans.php');
 }
 
+if (is_post() && post('action') === 'auto_repay') {
+    verify_csrf();
+    $cardId = (int)post('card_id');
+    if (!in_array($loan['status'], ['approved', 'active'], true)) {
+        flash('error', 'This loan is closed.');
+    } elseif ($cardId && !q_val('SELECT 1 FROM payment_cards WHERE id = ? AND user_id = ? AND removed_at IS NULL', [$cardId, $uid])) {
+        flash('error', 'Choose one of your saved cards.');
+    } else {
+        q('UPDATE loans SET auto_repay = ?, auto_card_id = ?, auto_fails = 0 WHERE id = ?', [(int)(bool)$cardId, $cardId ?: $loan['auto_card_id'], $loan['id']]);
+        flash('success', $cardId ? 'Auto-repay is on. Each payment is collected from your card on its due date, so you never pay a late fee by accident.' : 'Auto-repay turned off.');
+    }
+    redirect('loan.php?id=' . $loan['id']);
+}
+
 if (is_post()) {
     verify_csrf();
     $amount = round((float)post('amount'), 2);
@@ -20,6 +34,7 @@ if (is_post()) {
         $amount = min($amount, $snap['payoff']);
 
         if (post('source') === 'savings') {
+            check_pin($u, (string)post('pin'));
             $pdo = db();
             $pdo->beginTransaction();
             try {
@@ -41,8 +56,8 @@ if (is_post()) {
             flash('success', money($amount) . ' paid from your savings.' . ($after['status'] === 'repaid' ? ' Your loan is fully repaid 🎉' : ''));
         } elseif (post('source') === 'flutterwave') {
             if (!flw_deposits_on()) throw new UserError('Online payment is not available right now.');
-            q('INSERT INTO transactions (user_id, type, amount, method, reference, loan_id) VALUES (?, "loan_repayment", ?, "flutterwave", ?, ?)',
-                [$uid, $amount, flw_reference('LPL-REP'), $loan['id']]);
+            q('INSERT INTO transactions (user_id, type, amount, method, reference, loan_id, save_card) VALUES (?, "loan_repayment", ?, "flutterwave", ?, ?, ?)',
+                [$uid, $amount, flw_reference('LPL-REP'), $loan['id'], (int)(bool)post('save_card')]);
             $tx = q_one('SELECT * FROM transactions WHERE id = ?', [db()->lastInsertId()]);
             try {
                 redirect_external(flw_checkout($tx, $u, 'Loan #' . $loan['id'] . ' repayment'));
@@ -141,6 +156,26 @@ app_header('Loan #' . $loan['id'], 'loans');
   </div>
 </div>
 
+<?php if (in_array($loan['status'], ['approved', 'active'], true) && flw_deposits_on()): $cards = user_cards($uid); ?>
+<div class="card auto-box" id="auto-repay">
+  <?php if ($loan['auto_repay']): $c = array_values(array_filter($cards, fn($c) => (int)$c['id'] === (int)$loan['auto_card_id']))[0] ?? null; ?>
+    <div class="row between">
+      <span><span class="badge badge-ok">Auto-repay on</span> <span class="small">Payments are collected from <?= $c ? e(($c['brand'] ?: 'Card') . ' •••• ' . $c['last4']) : 'your card' ?> on each due date<?= $loan['auto_fails'] ? '. The last attempt failed; please pay manually or check your card' : '' ?>.</span></span>
+      <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="auto_repay"><input type="hidden" name="card_id" value="0"><button class="btn btn-ghost btn-sm">Turn off</button></form>
+    </div>
+  <?php elseif ($cards): ?>
+    <form method="post" class="row between">
+      <?= csrf_field() ?><input type="hidden" name="action" value="auto_repay">
+      <span class="small"><strong>Never pay a late fee:</strong> collect each payment from your card on its due date.</span>
+      <span class="row"><select name="card_id" style="width:auto"><?php foreach ($cards as $c): ?><option value="<?= $c['id'] ?>"><?= e(($c['brand'] ?: 'Card') . ' •••• ' . $c['last4']) ?></option><?php endforeach; ?></select>
+      <button class="btn btn-primary btn-sm">Turn on auto-repay</button></span>
+    </form>
+  <?php else: ?>
+    <span class="small"><strong>Never pay a late fee:</strong> pay once online by card and tick "save it" to turn on automatic repayments.</span>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <?php if ($loan['status'] === 'active'): ?>
 <div class="card" id="repay">
   <h2>Make a repayment</h2>
@@ -156,7 +191,8 @@ app_header('Loan #' . $loan['id'], 'loans');
       <?php else: ?>
         <label>Plan<select name="plan_id"><?php foreach ($plans as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?> (<?= money($p['balance']) ?>)</option><?php endforeach; ?></select></label>
         <label>Amount<input type="number" name="amount" min="1" step="0.01" max="<?= $s['payoff'] ?>" value="<?= min($s['payoff'], (float)$plans[0]['balance']) ?>" required></label>
-        <button class="btn btn-primary" data-confirm="Pay this amount from your savings now?">Pay from savings</button>
+        <?php if (has_pin($u)): ?><label>PIN <span class="hint">Your 4-digit PIN</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label><?php else: ?><div class="alert alert-warn small" style="margin:0">Set a 4-digit PIN to pay from savings. <a href="<?= url('profile.php#pin') ?>">Set PIN</a></div><?php endif; ?>
+        <button class="btn btn-primary" <?= has_pin($u) ? '' : 'disabled' ?>>Pay from savings</button>
       <?php endif; ?>
     </form>
     <div class="stack">
@@ -167,6 +203,7 @@ app_header('Loan #' . $loan['id'], 'loans');
       <input type="hidden" name="source" value="flutterwave">
       <h3>Pay online <span class="badge badge-ok">instant</span></h3>
       <label>Amount<input type="number" name="amount" min="1" step="0.01" max="<?= $s['payoff'] ?>" value="<?= $nextDue ? round(min($s['payoff'], $nextDue['amount'] - $nextDue['covered']), 2) : $s['payoff'] ?>" required></label>
+      <label class="check"><input type="checkbox" name="save_card" value="1"><span class="small">If I pay by card, save it for automatic repayments</span></label>
       <button class="btn btn-primary"><?= icon('cash', 16) ?> Pay with card, transfer or USSD</button>
       <p class="muted small" style="margin:0">Secured by Flutterwave. Applied to your loan as soon as the payment succeeds.</p>
     </form>

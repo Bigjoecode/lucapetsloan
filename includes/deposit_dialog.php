@@ -27,6 +27,7 @@ $planSelect = function () use ($openPlans): void { ?>
           <input type="hidden" name="method" value="flutterwave">
           <input type="hidden" name="back" value="<?= $back ?>">
           <?php $planSelect(); ?>
+          <label class="check"><input type="checkbox" name="save_card" value="1"><span class="small">If I pay by card, save it so my daily savings can be collected automatically</span></label>
           <button class="btn btn-primary btn-block"><?= icon('cash', 16) ?> Pay now with card, transfer or USSD</button>
           <p class="muted small" style="margin:0;text-align:center">Secured by Flutterwave. Your savings go up as soon as the payment succeeds.</p>
         </form>

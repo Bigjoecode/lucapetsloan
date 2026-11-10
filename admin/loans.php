@@ -28,7 +28,7 @@ if (is_post()) {
                 $kyc = q_val('SELECT kyc_status FROM users WHERE id = ?', [$uid]);
                 if ($kyc !== 'verified') throw new UserError('Customer is not verified. A physical visit must be completed first.');
                 q('UPDATE loans SET status = "approved", approved_at = NOW(), admin_note = ? WHERE id = ?', [$note ?: null, $lid]);
-                notify($uid, 'Loan approved 🎉', 'Your ' . money0($loan['amount']) . ' loan was approved and will be paid out shortly.', 'loan.php?id=' . $lid);
+                notify($uid, 'Loan approved 🎉', 'Your ' . money0($loan['amount']) . ' loan was approved and will be paid out shortly.', 'loan.php?id=' . $lid, true);
                 $msg = 'Loan approved.';
                 break;
 
@@ -36,7 +36,7 @@ if (is_post()) {
                 if (!in_array($loan['status'], ['pending', 'approved'], true)) throw new UserError('This loan can no longer be rejected.');
                 if ($note === '') throw new UserError('Enter a reason for the customer.');
                 q('UPDATE loans SET status = "rejected", admin_note = ?, closed_at = NOW() WHERE id = ?', [$note, $lid]);
-                notify($uid, 'Loan application declined', $note, 'loan.php?id=' . $lid);
+                notify($uid, 'Loan application declined', $note, 'loan.php?id=' . $lid, true);
                 $msg = 'Loan rejected.';
                 break;
 
@@ -46,12 +46,16 @@ if (is_post()) {
                 if ($ref === '') throw new UserError('Enter the transfer reference.');
                 $date = post('disbursed_on') ?: date('Y-m-d');
                 if (strtotime($date) > time()) throw new UserError('Pay-out date cannot be in the future.');
-                $due = date('Y-m-d', strtotime($date . ' +' . ((int)$loan['tenure_months'] * DAYS_PER_MONTH) . ' days'));
-                q('UPDATE loans SET status = "active", disbursed_at = ?, due_date = ? WHERE id = ?', [$date . ' ' . date('H:i:s'), $due, $lid]);
-                q('INSERT INTO transactions (user_id, type, amount, method, reference, status, loan_id, note, processed_by, processed_at, created_at) VALUES (?, "loan_disbursement", ?, "bank_transfer", ?, "approved", ?, ?, ?, NOW(), ?)',
-                    [$uid, $loan['amount'], $ref, $lid, 'Paid to customer bank account', $admin['id'], $date . ' ' . date('H:i:s')]);
-                notify($uid, 'Loan paid out 💸', money0($loan['amount']) . ' has been sent to your bank account. Interest starts today; track it in the app.', 'loan.php?id=' . $lid);
+                if (q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status = "processing"', [$lid])) throw new UserError('A Flutterwave pay-out for this loan is already in progress.');
+                activate_loan($lid, $date, (int)$admin['id'], $ref, 'bank_transfer');
                 $msg = 'Loan marked as paid out. Interest now accrues daily.';
+                break;
+
+            case 'flw_payout':
+                // Commit the row lock first: the transfer call talks to Flutterwave.
+                $pdo->commit();
+                $pdo->beginTransaction();
+                $msg = flw_send_loan($lid, (int)$admin['id']);
                 break;
 
             case 'record_payment':
@@ -65,7 +69,7 @@ if (is_post()) {
                     q('UPDATE loans SET status = "active" WHERE id = ?', [$lid]);
                 }
                 apply_loan_payment($lid, $amount);
-                notify($uid, 'Repayment received', money($amount) . ' was applied to loan #' . $lid . '.', 'loan.php?id=' . $lid);
+                notify($uid, 'Repayment received', money($amount) . ' was applied to loan #' . $lid . '.', 'loan.php?id=' . $lid, true);
                 $msg = 'Repayment recorded.';
                 break;
 
@@ -83,7 +87,7 @@ if (is_post()) {
                 if ($after['payoff'] <= 0.009) {
                     q('UPDATE loans SET status = "repaid", closed_at = NOW() WHERE id = ?', [$lid]);
                 }
-                notify($uid, 'Late penalty waived', trim(($amount > 0 ? money($amount) . ' of late penalty was waived on loan #' . $lid . '. ' : '') . ($stop ? 'No further late penalties will be added. ' : '') . 'You now owe ' . money($after['payoff']) . '.'), 'loan.php?id=' . $lid);
+                notify($uid, 'Late penalty waived', trim(($amount > 0 ? money($amount) . ' of late penalty was waived on loan #' . $lid . '. ' : '') . ($stop ? 'No further late penalties will be added. ' : '') . 'You now owe ' . money($after['payoff']) . '.'), 'loan.php?id=' . $lid, true);
                 $detail = money($amount) . ($stop ? ', penalties stopped' : '') . ' · ' . $note;
                 $msg = 'Waiver applied. The customer now owes ' . money($after['payoff']) . '.';
                 break;
@@ -120,6 +124,8 @@ if ($id) {
     $history = q('SELECT status, COUNT(*) c FROM loans WHERE user_id = ? AND id <> ? GROUP BY status', [$loan['user_id'], $id])->fetchAll(PDO::FETCH_KEY_PAIR);
     $daysSaved = (int)q_val('SELECT COUNT(DISTINCT DATE(created_at)) FROM transactions WHERE user_id = ? AND type = "deposit" AND status = "approved"', [$loan['user_id']]);
     $txs = q('SELECT * FROM transactions WHERE loan_id = ? ORDER BY id DESC', [$id])->fetchAll();
+    $payoutBusy = (bool)q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status = "processing"', [$id]);
+    $flwReady = $loan['status'] === 'approved' && flw_payouts_on() && !empty($kyc['bank_code']) && !$payoutBusy;
     $waivers = q('SELECT w.*, u.full_name staff FROM loan_waivers w LEFT JOIN users u ON u.id = w.admin_id WHERE w.loan_id = ? ORDER BY w.id DESC', [$id])->fetchAll();
     $dti = $kyc && (float)$kyc['monthly_income'] > 0 ? $s['installment'] / (float)$kyc['monthly_income'] * 100 : null;
 
@@ -198,8 +204,16 @@ if ($id) {
                 <label>Transfer reference<input name="reference" required maxlength="80"></label>
                 <label>Pay-out date<input type="date" name="disbursed_on" value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>"></label>
               </div>
-              <button class="btn btn-primary"><?= icon('cash', 16) ?> Mark as paid out</button>
+              <button class="btn btn-<?= $flwReady ? 'ghost' : 'primary' ?>"><?= icon('cash', 16) ?> Mark as paid out</button>
             </form>
+            <?php if ($flwReady): ?>
+              <form method="post" class="form" style="margin-top:.6rem">
+                <?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $id ?>"><input type="hidden" name="action" value="flw_payout">
+                <button class="btn btn-primary" data-confirm="Send <?= e(money($loan['amount'])) ?> to <?= e($kyc['bank_name'] . ' ' . $kyc['account_number']) ?> through Flutterwave now?"><?= icon('cash', 16) ?> Pay out via Flutterwave</button>
+              </form>
+            <?php elseif ($payoutBusy): ?>
+              <div class="alert alert-info" style="margin-top:.6rem">A Flutterwave pay-out is in progress. The loan starts when the bank confirms.</div>
+            <?php endif; ?>
             <form method="post" class="form" style="margin-top:1rem">
               <?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $id ?>"><input type="hidden" name="action" value="reject">
               <label>Cancel with reason<input name="note" required maxlength="255"></label>

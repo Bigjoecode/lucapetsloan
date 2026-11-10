@@ -33,6 +33,25 @@
     })
   );
 
+  // Installable app: register the service worker and offer an "Install app" button
+  const base = document.documentElement.dataset.base || '';
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register(base + '/sw.php', { scope: base + '/' }).catch(() => {});
+  }
+  let installEvent = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installEvent = e;
+    document.querySelectorAll('[data-install]').forEach((b) => { b.hidden = false; });
+  });
+  document.querySelectorAll('[data-install]').forEach((b) => b.addEventListener('click', async () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    await installEvent.userChoice;
+    installEvent = null;
+    document.querySelectorAll('[data-install]').forEach((x) => { x.hidden = true; });
+  }));
+
   // Staff role: permissions only matter for regular staff
   document.querySelectorAll('select[data-role]').forEach((sel) => {
     const grid = sel.form.querySelector('.perm-grid');

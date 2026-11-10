@@ -14,7 +14,7 @@ if ($reset && is_post()) {
         q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $reset['id']]);
         // Every outstanding link for this account stops working once one is used.
         q('UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [$reset['id']]);
-        notify((int)$reset['id'], 'Password changed', 'Your password was reset. If this wasn\'t you, call ' . SUPPORT_PHONE . ' right away.');
+        notify((int)$reset['id'], 'Password changed', 'Your password was reset. If this wasn\'t you, call ' . SUPPORT_PHONE . ' right away.', '', true);
         unset($_SESSION['uid'], $_SESSION['login_fails']);
         flash('success', 'Password updated. Sign in with your new password.');
         redirect('login.php');

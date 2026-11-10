@@ -11,6 +11,10 @@ return [
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('customer','admin','super_admin') NOT NULL DEFAULT 'customer',
   permissions VARCHAR(255) NULL COMMENT 'comma-separated staff permissions; NULL = all except super admin ones',
+  pin_hash VARCHAR(255) NULL COMMENT '4-digit PIN for moving money out',
+  pin_fails TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  pin_locked_until DATETIME NULL,
+  credit_limit_override DECIMAL(14,2) NULL COMMENT 'set by staff; replaces the level-based limit',
   kyc_status ENUM('none','submitted','visit_scheduled','verified','rejected') NOT NULL DEFAULT 'none',
   status ENUM('active','suspended') NOT NULL DEFAULT 'active',
   last_login_at DATETIME NULL,
@@ -89,6 +93,9 @@ return [
   balance DECIMAL(14,2) NOT NULL DEFAULT 0,
   interest_earned DECIMAL(14,2) NOT NULL DEFAULT 0,
   interest_accrued_on DATE NULL COMMENT 'last day savings interest was credited up to',
+  auto_save TINYINT(1) NOT NULL DEFAULT 0,
+  auto_card_id INT UNSIGNED NULL,
+  auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0,
   status ENUM('active','completed','closed') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (user_id),
@@ -128,6 +135,10 @@ return [
   closed_at DATETIME NULL,
   penalty_waived DECIMAL(14,2) NOT NULL DEFAULT 0,
   penalty_stopped_on DATE NULL,
+  auto_repay TINYINT(1) NOT NULL DEFAULT 0,
+  auto_card_id INT UNSIGNED NULL,
+  auto_fails TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  auto_approved TINYINT(1) NOT NULL DEFAULT 0,
   INDEX (user_id), INDEX (status),
   CONSTRAINT fk_loan_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_loan_product FOREIGN KEY (product_id) REFERENCES loan_products(id)
@@ -142,6 +153,7 @@ return [
   reference VARCHAR(80) NULL,
   status ENUM('pending','approved','rejected','processing') NOT NULL DEFAULT 'pending',
   provider_ref VARCHAR(80) NULL COMMENT 'Flutterwave transaction or transfer id',
+  save_card TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'customer asked to keep the card for automatic payments',
   savings_plan_id INT UNSIGNED NULL,
   loan_id INT UNSIGNED NULL,
   note VARCHAR(255) NULL,
@@ -203,6 +215,33 @@ return [
   ip VARCHAR(45) NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (actor_id), INDEX (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS payment_cards (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  token VARCHAR(120) NOT NULL,
+  email VARCHAR(160) NOT NULL COMMENT 'Flutterwave ties the token to this email',
+  brand VARCHAR(40) NOT NULL DEFAULT '',
+  last4 CHAR(4) NOT NULL DEFAULT '',
+  expiry VARCHAR(7) NOT NULL DEFAULT '',
+  removed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (user_id),
+  CONSTRAINT fk_card_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+"CREATE TABLE IF NOT EXISTS messages_log (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NULL,
+  channel VARCHAR(20) NOT NULL,
+  recipient VARCHAR(160) NOT NULL,
+  kind VARCHAR(40) NOT NULL DEFAULT '' COMMENT 'reminders use kind + ref to avoid sending twice',
+  ref VARCHAR(80) NOT NULL DEFAULT '',
+  body VARCHAR(500) NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (user_id), INDEX (kind, ref)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
 SESSIONS_TABLE_SQL,

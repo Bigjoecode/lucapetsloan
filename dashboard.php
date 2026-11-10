@@ -80,6 +80,8 @@ app_header('Home', 'dashboard');
   <a href="<?= url('verification.php') ?>"><span class="qi"><?= icon('shield') ?></span>Verify</a>
 </div>
 
+<?php if ($u['kyc_status'] === 'verified' && !$loan) echo credit_card_html(credit_profile($u)); ?>
+
 <div class="grid grid-2">
   <div class="card">
     <div class="card-head"><h2>Today's savings</h2><a class="small" href="<?= url('savings.php') ?>">All plans</a></div>
