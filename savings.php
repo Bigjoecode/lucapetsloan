@@ -196,7 +196,7 @@ app_header('Savings', 'savings');
           <select name="plan_id"><?php foreach ($withdrawable as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?> (<?= money($p['balance']) ?>)</option><?php endforeach; ?></select>
         </label>
         <label>Amount<input type="number" name="amount" min="<?= setting('min_withdrawal') ?>" step="50" required></label>
-        <p class="muted small">Paid to <?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?>.<?php if (flw_payouts_on() && !$payout['bank_code']): ?> <a href="<?= url('profile.php#payout') ?>">Confirm your bank</a> for faster payouts.<?php endif; ?></p>
+        <p class="muted small"><?= setting('auto_payouts') && flw_payouts_on() && $payout['bank_code'] ? 'Sent instantly to' : 'Paid to' ?> <?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?>.<?php if (flw_payouts_on() && !$payout['bank_code']): ?> <a href="<?= url('profile.php#payout') ?>">Confirm your bank</a> for faster payouts.<?php endif; ?></p>
         <button class="btn btn-primary btn-block">Request withdrawal</button>
       </form>
     <?php endif; ?>
