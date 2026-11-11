@@ -1,42 +1,80 @@
 <?php
 declare(strict_types=1);
 
-/* BVN checks through Dojah: does the BVN exist, and does it belong to this name? */
+/*
+ * BVN and NIN checks through Prembly (IdentityPass). Prembly returns the
+ * name and date of birth on record; we compare them with the customer.
+ */
 
-function dojah_on(): bool
+function prembly_on(): bool
 {
-    return int_key('dojah_app_id') !== '' && int_key('dojah_secret_key') !== '';
+    return int_key('prembly_secret_key') !== '';
 }
 
-/**
- * Returns ['result' => match|partial|no_match|not_found|error, 'details' => text].
- * Only "not_found" should stop a customer; the others are for staff to weigh up.
- */
-function bvn_check(string $bvn, string $fullName, string $dob): array
+/** POST a number to a Prembly verification endpoint. Returns [http, body]. */
+function prembly_post(string $path, string $number): array
 {
-    $words = preg_split('/\s+/', trim($fullName));
-    $query = http_build_query(['bvn' => $bvn, 'first_name' => $words[0] ?? '', 'last_name' => count($words) > 1 ? end($words) : '', 'dob' => $dob]);
-    $ch = curl_init(dojah_base() . '/api/v1/kyc/bvn?' . $query);
+    $headers = ['x-api-key: ' . int_key('prembly_secret_key'), 'Content-Type: application/json', 'Accept: application/json'];
+    if (int_key('prembly_app_id') !== '') {
+        $headers[] = 'app-id: ' . int_key('prembly_app_id');
+    }
+    $ch = curl_init(rtrim(setting('prembly_base_url'), '/') . '/' . ltrim($path, '/'));
     curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20,
-        CURLOPT_HTTPHEADER => ['AppId: ' . int_key('dojah_app_id'), 'Authorization: ' . int_key('dojah_secret_key'), 'Accept: application/json'],
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['number' => $number]),   // Prembly rejects numbers sent as integers
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_HTTPHEADER => $headers,
     ]);
     $raw = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    $res = is_string($raw) ? json_decode($raw, true) : null;
-    $e = $res['entity'] ?? null;
+    $body = is_string($raw) ? (json_decode($raw, true) ?: []) : [];
+    if ($http < 200 || $http >= 300) {
+        error_log('[lucapetloan] prembly ' . $path . ' failed: HTTP ' . $http . ' ' . substr((string)$raw, 0, 300));
+    }
+    return [$http, $body];
+}
 
-    if ($http === 400 || $http === 404 || (is_array($e) && isset($e['bvn']['status']) && !$e['bvn']['status'])) {
-        return ['result' => 'not_found', 'details' => 'BVN not found at the bank database'];
+/** Dates come back as 01-Jan-1990, 01-01-1990 or 1990-01-01. */
+function normalise_date(string $d): ?string
+{
+    foreach (['d-M-Y', 'd-m-Y', 'Y-m-d', 'd/m/Y'] as $f) {
+        $dt = DateTime::createFromFormat('!' . $f, trim($d));
+        if ($dt && $dt->format($f) === trim($d)) {
+            return $dt->format('Y-m-d');
+        }
     }
-    if ($http < 200 || $http >= 300 || !is_array($e)) {
-        error_log('[lucapetloan] dojah bvn check failed: HTTP ' . $http . ' ' . substr((string)$raw, 0, 300));
-        return ['result' => 'error', 'details' => 'Check unavailable (HTTP ' . $http . ')'];
+    return null;
+}
+
+/**
+ * Check a BVN or NIN. Returns ['result' => match|partial|no_match|not_found|error, 'details' => text].
+ * Only "not_found" should stop a customer; staff weigh up the others at review.
+ */
+function identity_check(string $kind, string $number, string $fullName, string $dob): array
+{
+    $label = strtoupper($kind);
+    [$http, $b] = prembly_post(setting($kind === 'bvn' ? 'prembly_bvn_path' : 'prembly_nin_path'), $number);
+    $code = (string)($b['response_code'] ?? '');
+    if ($code === '01' || $http === 404) {
+        return ['result' => 'not_found', 'details' => $label . ' not found'];
     }
-    $first = !empty($e['first_name']['status']);
-    $last = !empty($e['last_name']['status']);
-    $conf = fn($k) => isset($e[$k]['confidence_value']) ? (int)$e[$k]['confidence_value'] . '%' : '?';
-    $details = 'First name ' . ($first ? 'matches' : 'differs') . ' (' . $conf('first_name') . '), last name ' . ($last ? 'matches' : 'differs') . ' (' . $conf('last_name') . ')';
-    return ['result' => $first && $last ? 'match' : ($first || $last ? 'partial' : 'no_match'), 'details' => $details];
+    $d = $b['data'] ?? null;
+    if ($http < 200 || $http >= 300 || $code !== '00' || !is_array($d)) {
+        return ['result' => 'error', 'details' => $label . ' check unavailable (' . ($b['detail'] ?? $b['message'] ?? 'HTTP ' . $http) . ')'];
+    }
+    // BVN uses firstName/lastName, NIN uses firstname/surname.
+    $first = strtolower((string)($d['firstName'] ?? $d['firstname'] ?? $d['first_name'] ?? ''));
+    $last = strtolower((string)($d['lastName'] ?? $d['surname'] ?? $d['lastname'] ?? $d['last_name'] ?? ''));
+    $middle = strtolower((string)($d['middleName'] ?? $d['middlename'] ?? $d['middle_name'] ?? ''));
+    $mine = preg_split('/[^a-z]+/', strtolower($fullName), -1, PREG_SPLIT_NO_EMPTY);
+    $firstOk = $first !== '' && in_array($first, $mine, true);
+    $lastOk = $last !== '' && in_array($last, $mine, true);
+    $theirDob = normalise_date((string)($d['dateOfBirth'] ?? $d['birthdate'] ?? $d['date_of_birth'] ?? $d['dob'] ?? ''));
+    $dobOk = $theirDob === null ? null : $theirDob === $dob;
+
+    $result = $firstOk && $lastOk ? 'match' : ($firstOk || $lastOk ? 'partial' : 'no_match');
+    if ($result === 'match' && $dobOk === false) {
+        $result = 'partial';
+    }
+    $details = $label . ' name on record: ' . ucwords(trim("$first $middle $last")) . ($dobOk === null ? '' : ' · date of birth ' . ($dobOk ? 'matches' : 'differs (' . $theirDob . ')'));
+    return ['result' => $result, 'details' => mb_substr($details, 0, 255)];
 }

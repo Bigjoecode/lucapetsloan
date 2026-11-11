@@ -158,7 +158,7 @@ app_header('Settings', 'settings', 'admin');
         <label>Two staff approvals for loans of<input type="number" name="dual_approval_amount" min="0" step="10000" value="<?= setting('dual_approval_amount') ?>"><span class="hint">0 = one approval is enough. Instant approval never applies at this size.</span></label>
         <label class="check"><input type="checkbox" name="require_staff_2fa" value="1" <?= $on('require_staff_2fa') ?>><span class="small">All staff must sign in with an authenticator app (two-step sign-in)</span></label>
         <label>Flag home-visit check-ins further than (metres)<input type="number" name="visit_radius_m" min="50" step="50" value="<?= setting('visit_radius_m') ?>"></label>
-        <p class="small muted" style="margin:0">BVN checks: <?= dojah_on() ? '<strong>on</strong> through Dojah' . (str_contains(dojah_base(), 'sandbox') ? ' (sandbox, test data only)' : '') : 'off. Add your Dojah keys under <a href="' . url('admin/integrations.php') . '">Integrations</a> to check every BVN before a visit is booked' ?>.</p>
+        <p class="small muted" style="margin:0">BVN &amp; NIN checks: <?= prembly_on() ? '<strong>on</strong> through Prembly' : 'off. Add your Prembly key under <a href="' . url('admin/integrations.php') . '">Integrations</a> to check every BVN and NIN before a visit is booked' ?>.</p>
       </div>
     </div>
 

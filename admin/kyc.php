@@ -163,8 +163,8 @@ if ($id) {
             <dt>Date of birth</dt><dd><?= fdate($k['dob']) ?> (<?= (int)date_diff(date_create($k['dob']), date_create())->y ?> yrs)</dd>
             <dt>Gender / status</dt><dd><?= e($k['gender']) ?> · <?= e($k['marital_status']) ?></dd>
             <dt>ID</dt><dd><?= e($k['id_type']) ?> · <?= e($k['id_number']) ?></dd>
-            <dt>BVN</dt><dd><?= e($k['bvn']) ?><?php if ($k['bvn_check']): ?> <span class="badge badge-<?= ['match' => 'ok', 'partial' => 'warn', 'no_match' => 'bad', 'error' => 'muted'][$k['bvn_check']] ?? 'muted' ?>"><?= e(['match' => 'BVN matches name', 'partial' => 'BVN partly matches', 'no_match' => 'BVN name differs', 'error' => 'BVN not checked'][$k['bvn_check']] ?? $k['bvn_check']) ?></span><div class="muted small"><?= e($k['bvn_check_details']) ?></div><?php endif; ?></dd>
-            <dt>NIN</dt><dd><?= $k['nin'] ? e($k['nin']) : '<span class="muted">Not given (older submission)</span>' ?></dd>
+            <dt>BVN</dt><dd><?= e($k['bvn']) ?><?php if ($k['bvn_check']): ?> <span class="badge badge-<?= ['match' => 'ok', 'partial' => 'warn', 'no_match' => 'bad', 'not_found' => 'bad', 'error' => 'muted'][$k['bvn_check']] ?? 'muted' ?>"><?= e(['match' => 'matches name', 'partial' => 'partly matches', 'no_match' => 'name differs', 'not_found' => 'not found', 'error' => 'not checked'][$k['bvn_check']] ?? $k['bvn_check']) ?></span><div class="muted small"><?= e($k['bvn_check_details']) ?></div><?php endif; ?></dd>
+            <dt>NIN</dt><dd><?= $k['nin'] ? e($k['nin']) : '<span class="muted">Not given (older submission)</span>' ?><?php if ($k['nin_check']): ?> <span class="badge badge-<?= ['match' => 'ok', 'partial' => 'warn', 'no_match' => 'bad', 'not_found' => 'bad', 'error' => 'muted'][$k['nin_check']] ?? 'muted' ?>"><?= e(['match' => 'matches name', 'partial' => 'partly matches', 'no_match' => 'name differs', 'not_found' => 'not found', 'error' => 'not checked'][$k['nin_check']] ?? $k['nin_check']) ?></span><div class="muted small"><?= e($k['nin_check_details']) ?></div><?php endif; ?></dd>
           </dl>
         </div>
         <div class="card">

@@ -62,7 +62,9 @@ const SETTING_DEFAULTS = [
     'limit_platinum'       => 500000,
     'last_cron_run'        => '',       // written by the daily job
     'flw_mode'             => 'test',   // Flutterwave keys in use: test or live (keys are under Integrations)
-    'dojah_mode'           => 'sandbox',// Dojah sandbox (test data) or live
+    'prembly_base_url'     => 'https://api.prembly.com',          // Prembly (IdentityPass) API
+    'prembly_bvn_path'     => '/verification/bvn_validation',
+    'prembly_nin_path'     => '/verification/vnin-basic',
     'dual_approval_amount' => 200000,   // loans this size or bigger need two staff approvals (0 = off)
     'require_staff_2fa'    => 0,        // staff must use an authenticator app to sign in
     'referral_bonus'       => 500,      // paid into the inviter's savings (0 = off)
@@ -86,8 +88,7 @@ define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3
 define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
 define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
 
-// BVN checks through Dojah (dojah.io). Use https://sandbox.dojah.io while testing.
-define('DOJAH_BASE_URL', rtrim((string)env('DOJAH_BASE_URL', ''), '/'));   // override only; normally set by the sandbox/live switch
+// BVN and NIN checks go through Prembly; keys and endpoints are under Integrations.
 
 // Daily scheduled job (/cron.php). Vercel sends "Authorization: Bearer <CRON_SECRET>".
 define('CRON_SECRET', env('CRON_SECRET', ''));

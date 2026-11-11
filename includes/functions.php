@@ -568,6 +568,8 @@ function run_schema(): array
         'ALTER TABLE kyc ADD COLUMN collateral_value DECIMAL(14,2) NULL',
         'ALTER TABLE kyc ADD COLUMN collateral_doc VARCHAR(80) NULL',
         'ALTER TABLE users ADD COLUMN pin_set_at DATETIME NULL',
+        'ALTER TABLE kyc ADD COLUMN nin_check VARCHAR(20) NULL',
+        'ALTER TABLE kyc ADD COLUMN nin_check_details VARCHAR(255) NULL',
     ];
     foreach ($migrations as $sql) {
         try {

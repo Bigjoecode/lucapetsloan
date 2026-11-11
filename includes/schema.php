@@ -54,6 +54,8 @@ return [
   bank_code VARCHAR(20) NULL,
   bvn_check VARCHAR(20) NULL COMMENT 'match / partial / no_match / error',
   bvn_check_details VARCHAR(255) NULL,
+  nin_check VARCHAR(20) NULL,
+  nin_check_details VARCHAR(255) NULL,
   officer_id INT UNSIGNED NULL,
   checkin_at DATETIME NULL,
   checkin_lat DECIMAL(10,7) NULL,

@@ -20,7 +20,7 @@ Optional environment variables: `APP_NAME`, `SUPPORT_PHONE`, `SUPPORT_EMAIL`, `A
 
 **Roles.** The first admin is the *super admin*: they manage staff and their permissions (Staff & roles), change loan and savings rates, payment options and bank details (Settings), and read the audit log of every staff action. Other staff only see the pages their permissions allow.
 
-**Service keys.** A super admin enters the Flutterwave (test and live, with a switch between them), Termii, Dojah and Resend keys under Admin → Integrations. They are stored encrypted (set `APP_KEY` to any long random string to choose the encryption key; otherwise it is derived from the database password, so changing that password means re-entering the keys). The environment variables below still work as a fallback.
+**Service keys.** A super admin enters the Flutterwave (test and live, with a switch between them), Termii, Prembly and Resend keys under Admin → Integrations. They are stored encrypted (set `APP_KEY` to any long random string to choose the encryption key; otherwise it is derived from the database password, so changing that password means re-entering the keys). The environment variables below still work as a fallback.
 
 Flutterwave transfers (withdrawals, loan pay-outs) only work from server IPs whitelisted in the Flutterwave dashboard. Payments in work without it.
 
@@ -30,7 +30,7 @@ Password reset emails: set `RESEND_API_KEY` (from resend.com) and `MAIL_FROM` (f
 
 **SMS (Termii).** Set `TERMII_API_KEY` and `TERMII_SENDER_ID` (a sender ID approved by Termii). Customers then get texts for approvals, pay-outs, payments, due dates, security changes and password reset links.
 
-**BVN checks (Dojah).** Set `DOJAH_APP_ID` and `DOJAH_SECRET_KEY` (and `DOJAH_BASE_URL=https://sandbox.dojah.io` while testing). Every BVN is checked against the customer's name before a home visit is booked; unknown BVNs are refused and name mismatches are flagged for staff.
+**BVN & NIN checks (Prembly).** Enter the Prembly secret key (and App ID if your account has one) under Admin → Integrations, sandbox key first. Every BVN and NIN is checked against the customer's name and date of birth before a home visit is booked; unknown numbers are refused and mismatches are flagged for staff.
 
 **Staff security.** Each staff member can turn on two-step sign-in (an authenticator app) under Sign-in security; a super admin can require it for everyone and reset it for someone who loses their phone. Loans at or above the two-approval amount in Settings need two different staff members to approve.
 

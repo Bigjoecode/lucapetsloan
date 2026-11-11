@@ -1,5 +1,5 @@
 <?php
-/* API keys and test/live switches for Flutterwave, Termii, Dojah and Resend (super admin only). */
+/* API keys and test/live switches for Flutterwave, Termii, Prembly and Resend (super admin only). */
 require __DIR__ . '/../includes/bootstrap.php';
 $me = require_super();
 
@@ -14,7 +14,7 @@ const INT_FORMS = [
         'flw_live_hash'   => ['Live webhook secret hash', true, '/^.{8,}$/'],
     ],
     'termii' => ['termii_api_key' => ['API key', true, '/^.{10,}$/'], 'termii_sender_id' => ['Sender ID', false, '/^[A-Za-z0-9 ]{3,11}$/']],
-    'dojah'  => ['dojah_app_id' => ['App ID', false, '/^.{6,}$/'], 'dojah_secret_key' => ['Secret key', true, '/^.{10,}$/']],
+    'prembly' => ['prembly_app_id' => ['App ID (optional)', false, '/^.{4,}$/'], 'prembly_secret_key' => ['Secret key (x-api-key)', true, '/^.{10,}$/']],
     'email'  => ['resend_api_key' => ['Resend API key', true, '/^re_/'], 'mail_from' => ['Send from', false, '/@/']],
 ];
 
@@ -51,9 +51,15 @@ if (is_post()) {
                 notify_staff('payments', 'Flutterwave switched to ' . strtoupper($mode), $mode === 'live' ? 'Real money now moves through Flutterwave.' : 'Payments now use test mode; no real money moves.', 'admin/integrations.php');
             }
         }
-        if ($service === 'dojah' && in_array(post('dojah_mode'), ['sandbox', 'live'], true) && post('dojah_mode') !== setting('dojah_mode')) {
-            save_setting('dojah_mode', post('dojah_mode'));
-            $changed[] = 'mode → ' . post('dojah_mode');
+        if ($service === 'prembly') {
+            foreach (['prembly_base_url' => '#^https?://[^\s]+$#', 'prembly_bvn_path' => '#^/[\w/.-]+$#', 'prembly_nin_path' => '#^/[\w/.-]+$#'] as $k => $re) {
+                $val = trim((string)post($k));
+                if ($val !== '' && $val !== setting($k)) {
+                    if (!preg_match($re, $val)) throw new UserError('Check the Prembly address and paths.');
+                    save_setting($k, $val);
+                    $changed[] = $k . ' → ' . $val;
+                }
+            }
         }
         if ($changed) {
             audit('integrations.' . $service, ucfirst($service), implode('; ', $changed));
@@ -86,10 +92,13 @@ function integration_test(string $service): string
             if (termii_key() === '') return 'Termii: no API key saved yet.';
             [$http, $b] = $get(TERMII_BASE_URL . '/get-balance?api_key=' . rawurlencode(termii_key()), ['Accept: application/json']);
             return $http === 200 && isset($b['balance']) ? 'Termii is working. Balance: ' . ($b['currency'] ?? '') . ' ' . $b['balance'] . '.' : 'Termii: key rejected (HTTP ' . $http . ').';
-        case 'dojah':
-            if (!dojah_on()) return 'Dojah: App ID and secret key are both needed.';
-            [$http, $b] = $get(dojah_base() . '/api/v1/balance', ['AppId: ' . int_key('dojah_app_id'), 'Authorization: ' . int_key('dojah_secret_key'), 'Accept: application/json']);
-            return $http === 200 ? 'Dojah (' . setting('dojah_mode') . ') is working. Wallet: ' . ($b['entity']['wallet_balance'] ?? 'n/a') . '.' : 'Dojah: keys rejected (HTTP ' . $http . ').';
+        case 'prembly':
+            if (!prembly_on()) return 'Prembly: no secret key saved yet.';
+            // A lookup of an impossible number: a "not found" answer proves the key is accepted without costing a real check.
+            [$http, $b] = prembly_post(setting('prembly_bvn_path'), '00000000000');
+            $ok = $http >= 200 && $http < 300 && isset($b['response_code']);
+            return $ok ? 'Prembly is working' . (!empty($b['is_sandbox']) || str_starts_with((string)($b['verification']['reference'] ?? ''), 'SBX') ? ' (sandbox)' : '') . '. Response: ' . ($b['detail'] ?? $b['response_code']) . '.'
+                : 'Prembly: request refused · ' . ($b['detail'] ?? $b['message'] ?? 'HTTP ' . $http) . '. Check the key and the address below.';
         default:
             return mail_enabled() ? 'Resend key saved. Try "Forgot password" with your own email to see a real message.' : 'Email: no Resend key saved yet.';
     }
@@ -141,16 +150,21 @@ app_header('Integrations', 'integrations', 'admin');
       <div class="row"><button class="btn btn-primary">Save Termii</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
     </form>
   </div>
-  <div class="card" id="dojah">
-    <h2>BVN checks · Dojah</h2>
-    <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="dojah">
-      <div class="row">
-        <label class="check"><input type="radio" name="dojah_mode" value="sandbox" <?= setting('dojah_mode') !== 'live' ? 'checked' : '' ?>><span>Sandbox (test BVN 22222222222)</span></label>
-        <label class="check"><input type="radio" name="dojah_mode" value="live" <?= setting('dojah_mode') === 'live' ? 'checked' : '' ?>><span>Live</span></label>
-      </div>
-      <?php foreach (INT_FORMS['dojah'] as $n => $spec) $field($n, $spec); ?>
+  <div class="card" id="prembly">
+    <h2>BVN &amp; NIN checks · Prembly</h2>
+    <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="prembly">
+      <?php foreach (INT_FORMS['prembly'] as $n => $spec) $field($n, $spec); ?>
+      <p class="small muted" style="margin:0">Use your sandbox key while testing and your live key for real customers (Prembly dashboard → Developers → API keys).</p>
+      <details><summary class="small">Advanced: API address and endpoints</summary>
+        <div class="form" style="margin-top:.6rem">
+          <label>API address<input name="prembly_base_url" value="<?= e(setting('prembly_base_url')) ?>"></label>
+          <label>BVN endpoint<input name="prembly_bvn_path" value="<?= e(setting('prembly_bvn_path')) ?>"></label>
+          <label>NIN endpoint<input name="prembly_nin_path" value="<?= e(setting('prembly_nin_path')) ?>"></label>
+          <p class="small muted" style="margin:0">Only change these if Prembly's docs or support give you different ones.</p>
+        </div>
+      </details>
       <?= $pw ?>
-      <div class="row"><button class="btn btn-primary">Save Dojah</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
+      <div class="row"><button class="btn btn-primary">Save Prembly</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
     </form>
   </div>
   <div class="card" id="email">

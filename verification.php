@@ -54,14 +54,19 @@ if (is_post() && $editable) {
     $data['years_at_address'] = min(99, max(0, (int)$data['years_at_address']));
     if (!post('consent')) $errors['consent'] = 'Please agree to the physical verification visit.';
 
-    // Check the BVN belongs to this person before booking a visit (only when it's new or changed).
-    if (!$errors && dojah_on() && (!$kyc || $kyc['bvn'] !== $data['bvn'] || empty($kyc['bvn_check']) || $kyc['bvn_check'] === 'error')) {
-        $check = bvn_check($data['bvn'], $u['full_name'], $data['dob']);
-        if ($check['result'] === 'not_found') {
-            $errors['bvn'] = 'We could not find that BVN. Check the 11 digits (dial *565*0# to see your BVN).';
+    // Check the BVN and NIN belong to this person before booking a visit (only when new or changed).
+    if (!$errors && prembly_on()) {
+        foreach (['bvn' => 'We could not find that BVN. Check the 11 digits (dial *565*0# to see it).', 'nin' => 'We could not find that NIN. Check the 11 digits (dial *346# to see it).'] as $kind => $notFound) {
+            if ($kyc && $kyc[$kind] === $data[$kind] && !empty($kyc[$kind . '_check']) && $kyc[$kind . '_check'] !== 'error') {
+                continue;
+            }
+            $check = identity_check($kind, $data[$kind], $u['full_name'], $data['dob']);
+            if ($check['result'] === 'not_found') {
+                $errors[$kind] = $notFound;
+            }
+            $data[$kind . '_check'] = $check['result'];
+            $data[$kind . '_check_details'] = $check['details'];
         }
-        $data['bvn_check'] = $check['result'];
-        $data['bvn_check_details'] = mb_substr($check['details'], 0, 255);
     }
 
     $docs = ['id_doc' => 'ID document', 'photo' => 'Passport photo', 'utility_bill' => 'Utility bill', 'collateral_doc' => 'Collateral photo or document'];
