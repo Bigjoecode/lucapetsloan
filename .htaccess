@@ -1,0 +1,22 @@
+# Shared hosting (Apache / LiteSpeed). Vercel ignores this file.
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+# Always HTTPS, and send www to the bare domain
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:\d+)?$ [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+# Never serve code folders, config, docs or dotfiles directly
+RewriteRule ^(includes|api|\.git)(/|$) - [F,L]
+RewriteRule ^(config\.php|README\.md|vercel\.json|install\.lock|\.gitignore)$ - [F,L]
+RewriteRule (^|/)\. - [F,L]
+</IfModule>
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>

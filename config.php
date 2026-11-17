@@ -5,8 +5,31 @@
  * Locally (XAMPP) the defaults below apply; open /install.php once to set up.
  */
 
+// On shared hosting (cPanel) settings live in a private file one folder ABOVE the web root,
+// e.g. /home/USER/.lucapetsloan.env next to /home/USER/lucapetsloan.com. Format: KEY=value per line.
+function env_file(): array
+{
+    static $vars = null;
+    if ($vars === null) {
+        $vars = [];
+        $file = dirname(__DIR__) . '/.lucapetsloan.env';
+        if (is_file($file) && is_readable($file)) {
+            foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                $line = trim($line);
+                if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) continue;
+                [$k, $v] = array_map('trim', explode('=', $line, 2));
+                if (strlen($v) >= 2 && ($v[0] === '"' || $v[0] === "'") && $v[-1] === $v[0]) $v = substr($v, 1, -1);
+                $vars[$k] = $v;
+            }
+        }
+    }
+    return $vars;
+}
+
 function env(string $key, $default = null)
 {
+    $file = env_file();
+    if (array_key_exists($key, $file)) return $file[$key];   // may be '' on purpose (e.g. BASE_URL at the domain root)
     $v = getenv($key);
     return ($v === false || $v === '') ? $default : $v;
 }
