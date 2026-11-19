@@ -1,5 +1,5 @@
 <?php
-/* API keys and test/live switches for Flutterwave, Termii, Prembly and Resend (super admin only). */
+/* API keys and test/live switches for Flutterwave, NOWPayments, Termii, Prembly and Resend (super admin only). */
 require __DIR__ . '/../includes/bootstrap.php';
 $me = require_super();
 
@@ -12,6 +12,12 @@ const INT_FORMS = [
         'flw_live_public' => ['Live public key', false, '/^FLWPUBK-/'],
         'flw_live_secret' => ['Live secret key', true, '/^FLWSECK-/'],
         'flw_live_hash'   => ['Live webhook secret hash', true, '/^.{8,}$/'],
+    ],
+    'nowpayments' => [
+        'np_api_key'    => ['API key', true, '/^[A-Za-z0-9-]{20,}$/'],
+        'np_ipn_secret' => ['IPN secret key', true, '/^.{10,}$/'],
+        'np_email'      => ['Account email', false, '/@/'],
+        'np_password'   => ['Account password', true, '/^.{6,}$/'],
     ],
     'termii' => ['termii_api_key' => ['API key', true, '/^.{10,}$/'], 'termii_sender_id' => ['Sender ID', false, '/^[A-Za-z0-9 ]{3,11}$/']],
     'prembly' => ['prembly_app_id' => ['App ID (optional)', false, '/^.{4,}$/'], 'prembly_secret_key' => ['Secret key (x-api-key)', true, '/^.{10,}$/']],
@@ -51,6 +57,26 @@ if (is_post()) {
                 notify_staff('payments', 'Flutterwave switched to ' . strtoupper($mode), $mode === 'live' ? 'Real money now moves through Flutterwave.' : 'Payments now use test mode; no real money moves.', 'admin/integrations.php');
             }
         }
+        if ($service === 'nowpayments') {
+            $mode = post('np_mode') === 'live' ? 'live' : 'sandbox';
+            if ($mode !== np_mode()) {
+                $hasWallets = (bool)q_val('SELECT 1 FROM users WHERE np_sub_id IS NOT NULL LIMIT 1');
+                if ($hasWallets && !post('confirm_switch')) throw new UserError('Customers already have wallets in ' . np_mode() . ' mode. Tick the box to confirm the switch.');
+                save_setting('np_mode', $mode);
+                if ($hasWallets) {
+                    q('UPDATE users SET np_sub_id = NULL');   // wallets belong to one mode; new ones open on the next visit
+                    q('UPDATE crypto_deposits SET status = "expired" WHERE status = "waiting"');
+                }
+                q('DELETE FROM settings WHERE k LIKE "cache\_np\_%"');
+                $changed[] = 'mode → ' . strtoupper($mode);
+                notify_staff('payments', 'NOWPayments switched to ' . strtoupper($mode), $mode === 'live' ? 'Crypto deposits are now real.' : 'Crypto now uses the sandbox; nothing is real.', 'admin/crypto.php');
+            }
+            $on = post('crypto_savings') ? 1 : 0;
+            if ($on !== setting('crypto_savings')) {
+                save_setting('crypto_savings', $on);
+                $changed[] = 'crypto savings ' . ($on ? 'on' : 'off');
+            }
+        }
         if ($service === 'prembly') {
             foreach (['prembly_base_url' => '#^https?://[^\s]+$#', 'prembly_bvn_path' => '#^/[\w/.-]+$#', 'prembly_nin_path' => '#^/[\w/.-]+$#'] as $k => $re) {
                 $val = trim((string)post($k));
@@ -88,6 +114,19 @@ function integration_test(string $service): string
             $res = flw_request('GET', '/balances/NGN');
             if (!$res['ok']) return 'Flutterwave (' . flw_mode() . '): keys rejected · ' . flw_message($res, 'HTTP ' . $res['http']);
             return 'Flutterwave (' . flw_mode() . ') is working. NGN balance: ' . money($res['body']['data']['available_balance'] ?? 0) . '.';
+        case 'nowpayments':
+            if (int_key('np_api_key') === '') return 'NOWPayments: no API key saved yet.';
+            $res = np_request('GET', '/merchant/coins');
+            if (!$res['ok']) return 'NOWPayments (' . np_mode() . '): API key rejected · ' . np_message($res, 'HTTP ' . $res['http']) . '.';
+            $coins = count((array)($res['body']['selectedCurrencies'] ?? $res['body']['currencies'] ?? []));
+            if (!np_configured()) return 'NOWPayments API key works (' . $coins . ' coins). Add the account email and password so customer wallets can be opened.';
+            try {
+                np_jwt();
+            } catch (UserError) {
+                return 'NOWPayments API key works, but the account email or password was refused.';
+            }
+            q('DELETE FROM settings WHERE k LIKE "cache\_np\_%"');
+            return 'NOWPayments (' . np_mode() . ') is working: ' . $coins . ' coins switched on, account sign-in OK.';
         case 'termii':
             if (termii_key() === '') return 'Termii: no API key saved yet.';
             [$http, $b] = $get(TERMII_BASE_URL . '/get-balance?api_key=' . rawurlencode(termii_key()), ['Accept: application/json']);
@@ -138,6 +177,25 @@ app_header('Integrations', 'integrations', 'admin');
     <div class="alert alert-info small" style="margin:0"><strong>Payouts (withdrawals and loan pay-outs)</strong> only work from server addresses whitelisted in Flutterwave (Settings → Whitelisted IP addresses). Until that's set up, Flutterwave refuses transfers, nothing is sent, and the request waits in Payments for staff to pay manually. Card, transfer and USSD payments <em>in</em> are not affected.</div>
     <?= $pw ?>
     <div class="row"><button class="btn btn-primary">Save Flutterwave</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
+  </form>
+</div>
+
+<div class="card" id="nowpayments">
+  <div class="card-head"><h2>Crypto savings · NOWPayments</h2><span class="badge badge-<?= np_mode() === 'live' ? 'bad' : 'info' ?>"><?= np_mode() === 'live' ? 'LIVE: real crypto' : 'SANDBOX' ?></span></div>
+  <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="nowpayments">
+    <div class="row">
+      <label class="check"><input type="radio" name="np_mode" value="sandbox" <?= np_mode() === 'sandbox' ? 'checked' : '' ?>><span><strong>Sandbox</strong>: test coins (account at account-sandbox.nowpayments.io)</span></label>
+      <label class="check"><input type="radio" name="np_mode" value="live" <?= np_mode() === 'live' ? 'checked' : '' ?>><span><strong>Live</strong>: real crypto</span></label>
+    </div>
+    <label class="check small"><input type="checkbox" name="confirm_switch" value="1"><span>I understand switching mode gives every customer a new wallet in the other mode</span></label>
+    <div class="grid grid-2" style="align-items:start">
+      <div class="form"><?php foreach (['np_api_key', 'np_ipn_secret'] as $n) $field($n, INT_FORMS['nowpayments'][$n]); ?></div>
+      <div class="form"><?php foreach (['np_email', 'np_password'] as $n) $field($n, INT_FORMS['nowpayments'][$n]); ?></div>
+    </div>
+    <label class="check"><input type="checkbox" name="crypto_savings" value="1" <?= setting('crypto_savings') ? 'checked' : '' ?>><span>Offer crypto savings to customers</span></label>
+    <p class="small muted" style="margin:0">In the NOWPayments dashboard: <strong>Settings → Payments → API keys</strong> for the API key; <strong>Instant payment notifications</strong> for the IPN secret (the address is set per deposit automatically: <code><?= e(absolute_url('np_webhook.php')) ?></code>); <strong>Settings → Coins</strong> to choose which coins customers can save in. Customer wallets need the <strong>Custody</strong> feature: ask NOWPayments support to switch it on. The email and password are the ones you sign in to NOWPayments with (needed to open wallets and move coins for withdrawals).</p>
+    <?= $pw ?>
+    <div class="row"><button class="btn btn-primary">Save NOWPayments</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
   </form>
 </div>
 

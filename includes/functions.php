@@ -509,6 +509,21 @@ function store_upload(string $field, int $userId): ?string
     return 'doc:' . db()->lastInsertId();
 }
 
+/** Bump when schema.php or the migrations change: live sites then upgrade themselves on the next visit. */
+const SCHEMA_VERSION = 2;
+
+function ensure_schema(): void
+{
+    try {
+        if (setting('schema_version') < SCHEMA_VERSION) {
+            run_schema();
+            save_setting('schema_version', SCHEMA_VERSION);
+        }
+    } catch (PDOException $e) {
+        error_log('[lucapetloan] schema upgrade: ' . $e->getMessage());
+    }
+}
+
 /**
  * Create any missing tables, then bring older databases up to date.
  * Returns the errors from changes that could not be applied.
@@ -570,6 +585,7 @@ function run_schema(): array
         'ALTER TABLE users ADD COLUMN pin_set_at DATETIME NULL',
         'ALTER TABLE kyc ADD COLUMN nin_check VARCHAR(20) NULL',
         'ALTER TABLE kyc ADD COLUMN nin_check_details VARCHAR(255) NULL',
+        'ALTER TABLE users ADD COLUMN np_sub_id VARCHAR(30) NULL',
     ];
     foreach ($migrations as $sql) {
         try {

@@ -85,6 +85,9 @@ const SETTING_DEFAULTS = [
     'limit_platinum'       => 500000,
     'last_cron_run'        => '',       // written by the daily job
     'flw_mode'             => 'test',   // Flutterwave keys in use: test or live (keys are under Integrations)
+    'np_mode'              => 'sandbox', // NOWPayments: sandbox or live (keys are under Integrations)
+    'crypto_savings'       => 1,        // offer crypto savings once NOWPayments is connected
+    'schema_version'       => 0,        // written after database upgrades run
     'prembly_base_url'     => 'https://api.prembly.com',          // Prembly (IdentityPass) API
     'prembly_bvn_path'     => '/verification/bvn_validation',
     'prembly_nin_path'     => '/verification/vnin-basic',
@@ -108,6 +111,10 @@ define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3
 
 // SMS through Termii (termii.com). The sender ID must be approved by Termii;
 // the "dnd" channel also reaches numbers on Do-Not-Disturb but needs that approval too.
+// NOWPayments (crypto savings). NP_BASE_URL overrides both addresses (local tests only).
+define('NP_LIVE_URL', 'https://api.nowpayments.io/v1');
+define('NP_SANDBOX_URL', 'https://api-sandbox.nowpayments.io/v1');
+
 define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
 define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
 

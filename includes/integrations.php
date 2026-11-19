@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /*
- * API keys for Flutterwave, Termii, Prembly and Resend. A super admin manages
+ * API keys for Flutterwave, NOWPayments, Termii, Prembly and Resend. A super admin manages
  * them under Integrations; they're stored encrypted in the settings table.
  * Environment variables still work as a fallback for older setups.
  */
@@ -14,6 +14,8 @@ const INTEGRATION_KEYS = [
     'termii_api_key'  => 'TERMII_API_KEY',  'termii_sender_id' => 'TERMII_SENDER_ID',
     'prembly_app_id'  => 'PREMBLY_APP_ID',  'prembly_secret_key' => 'PREMBLY_SECRET_KEY',
     'resend_api_key'  => 'RESEND_API_KEY',  'mail_from' => 'MAIL_FROM',
+    'np_api_key'      => 'NP_API_KEY',      'np_ipn_secret' => 'NP_IPN_SECRET',
+    'np_email'        => 'NP_EMAIL',        'np_password' => 'NP_PASSWORD',
 ];
 
 /** Encryption key: APP_KEY if set, otherwise derived from the database password (both are server-side secrets). */

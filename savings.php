@@ -148,6 +148,7 @@ app_header('Savings', 'savings');
     <button class="btn btn-accent btn-sm" data-open="dlg-deposit"><?= icon('plus', 16) ?> Deposit</button>
     <button class="btn btn-light btn-sm" data-open="dlg-withdraw" id="withdraw"><?= icon('up', 16) ?> Withdraw</button>
     <a class="btn btn-light btn-sm" href="<?= url('ajo.php') ?>"><?= icon('users', 16) ?> Save with friends</a>
+    <?php if (crypto_on()): ?><a class="btn btn-light btn-sm" href="<?= url('crypto.php') ?>"><?= icon('cash', 16) ?> Save in crypto</a><?php endif; ?>
   </div>
 </div>
 

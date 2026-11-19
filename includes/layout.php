@@ -156,7 +156,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=6"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=7"></script>
 </body>
 </html>
 <?php
@@ -175,6 +175,7 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
             'collections' => can('collections') ? ['admin/collections.php', 'Collections', 'phone'] : null,
             'visits'    => can('visits') ? ['admin/visits.php', 'Home visits', 'map'] : null,
             'payments'  => can('payments') ? ['admin/payments.php', 'Payments', 'cash'] : null,
+            'crypto'    => can('payments') ? ['admin/crypto.php', 'Crypto', 'cash'] : null,
             'users'     => can('customers') ? ['admin/users.php', 'Customers', 'users'] : null,
             'products'  => can('products') ? ['admin/products.php', 'Loan products', 'cog'] : null,
             'reports'   => can('reports') ? ['admin/reports.php', 'Reports', 'chart'] : null,
@@ -189,6 +190,7 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
         $nav = [
             'dashboard'    => ['dashboard.php', 'Home', 'home'],
             'savings'      => ['savings.php', 'Savings', 'piggy'],
+            'crypto'       => ['crypto.php', 'Crypto savings', 'cash'],
             'loans'        => ['loans.php', 'Loans', 'loan'],
             'ajo'          => ['ajo.php', 'Group savings', 'users'],
             'verification' => ['verification.php', 'Verification', 'shield'],
@@ -250,7 +252,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=6"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=7"></script>
 </body>
 </html>
 <?php

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/integrations.php';
 require_once __DIR__ . '/flutterwave.php';
+require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/messaging.php';
 require_once __DIR__ . '/community.php';
 require_once __DIR__ . '/identity.php';
@@ -12,7 +13,8 @@ require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/layout.php';
 
 // Never show stack traces to visitors on the live site; log them instead.
-if (IS_VERCEL) {
+define('SHOW_ERRORS', !IS_VERCEL && in_array(strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? 'localhost')[0]), ['localhost', '127.0.0.1'], true));
+if (!SHOW_ERRORS) {
     ini_set('display_errors', '0');
 }
 set_exception_handler(function (Throwable $e): void {
@@ -21,7 +23,7 @@ set_exception_handler(function (Throwable $e): void {
         http_response_code(503);
         header('Content-Type: text/html; charset=utf-8');
     }
-    $detail = IS_VERCEL ? '' : '<pre style="white-space:pre-wrap;text-align:left;font-size:12px;color:#b42318">' . e($e->getMessage()) . '</pre>';
+    $detail = !SHOW_ERRORS ? '' : '<pre style="white-space:pre-wrap;text-align:left;font-size:12px;color:#b42318">' . e($e->getMessage()) . '</pre>';
     echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Temporarily unavailable</title>'
         . '<body style="font-family:system-ui;background:#f3f5f2;color:#13201b;display:grid;place-items:center;min-height:90vh;margin:0;padding:16px">'
         . '<div style="max-width:440px;text-align:center"><h1 style="font-size:1.4rem">We\'ll be right back</h1>'
@@ -47,4 +49,7 @@ if (session_status() === PHP_SESSION_NONE) {
 // Send visitors to the installer until the app has been set up.
 if (!defined('SKIP_INSTALL_CHECK') && !app_installed()) {
     redirect('install.php');
+}
+if (!defined('SKIP_INSTALL_CHECK')) {
+    ensure_schema();
 }

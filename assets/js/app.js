@@ -15,6 +15,14 @@
       d.showModal();
     })
   );
+  // Copy buttons: <button data-copy="text"> copies the text and says so for a moment.
+  document.querySelectorAll('[data-copy]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const done = () => { const t = b.textContent; b.textContent = 'Copied'; setTimeout(() => { b.textContent = t; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done, () => window.prompt('Copy this:', b.dataset.copy));
+      else window.prompt('Copy this:', b.dataset.copy);
+    })
+  );
   document.querySelectorAll('dialog [data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
   document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.close(); }));
 
