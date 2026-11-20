@@ -137,7 +137,7 @@ app_header('Dashboard', 'dashboard', 'app', 'Welcome back, ' . $firstName);
       <div class="qa">
         <button type="button" data-open="dlg-deposit"><span class="sq sq-green"><?= icon('plus', 24) ?></span>Deposit</button>
         <a href="<?= $repayHref ?>"><span class="sq sq-blue"><?= icon('loan', 24) ?></span><?= $loan && $loan['status'] === 'active' ? 'Repay loan' : 'Get a loan' ?></a>
-        <a href="<?= url(crypto_on() ? 'crypto.php' : 'ajo.php') ?>"><span class="sq sq-rose"><?= icon(crypto_on() ? 'coin' : 'users', 24) ?></span><?= crypto_on() ? 'Crypto' : 'Group savings' ?></a>
+        <a href="<?= url('crypto.php') ?>"><span class="sq sq-rose"><?= icon('coin', 24) ?></span>Crypto</a>
         <a href="<?= url('statement.php') ?>"><span class="sq sq-teal"><?= icon('doc', 24) ?></span>Statement</a>
       </div>
     </section>

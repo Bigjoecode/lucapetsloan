@@ -252,26 +252,34 @@ function crypto_available(int $userId, string $coin, array $balances): float
     return max(0, ($balances[$coin][0] ?? 0) - $held);
 }
 
-/** A deposit address for a coin: reuses one that is still open, otherwise asks NOWPayments for a new one. */
-function crypto_deposit_address(int $userId, string $coin, float $amount): array
+/**
+ * The customer's address for a coin. Each customer keeps ONE address per coin:
+ * NOWPayments credits later deposits to an address that has been paid into
+ * before ("repeated deposits"). Until the first deposit arrives the address is
+ * only reserved for NOWPayments' payment window, so an unused one that has run
+ * out is quietly swapped for a new one; after that it never changes.
+ */
+function crypto_wallet_address(int $userId, string $coin): array
 {
     if (!isset(np_coins()[$coin])) {
         throw new UserError('Choose a coin from the list.');
     }
-    $open = q_one('SELECT * FROM crypto_deposits WHERE user_id = ? AND coin = ? AND status = "waiting" AND (expires_at IS NULL OR expires_at > NOW() + INTERVAL 10 MINUTE) ORDER BY id DESC LIMIT 1', [$userId, $coin]);
-    if ($open && ($amount <= 0 || abs((float)$open['pay_amount'] - $amount) < 1e-12)) {
-        return $open;
+    $w = q_one('SELECT * FROM crypto_wallets WHERE user_id = ? AND coin = ?', [$userId, $coin]);
+    if ($w && ($w['funded'] || $w['expires_at'] === null || strtotime($w['expires_at']) > time() + 600)) {
+        return $w;
+    }
+    if ($w) {
+        // Unused and about to lapse: did a deposit arrive after all?
+        crypto_refresh_deposit((string)$w['payment_id']);
+        $w = q_one('SELECT * FROM crypto_wallets WHERE id = ?', [$w['id']]);
+        if ($w['funded']) {
+            return $w;
+        }
     }
     $min = np_min_amount($coin);
-    if ($amount <= 0) {
-        $amount = $min > 0 ? $min : 0;
-    }
-    if ($min > 0 && $amount < $min) {
-        throw new UserError('The smallest deposit for ' . strtoupper($coin) . ' is ' . coin_amount($min) . '.');
-    }
     $res = np_request('POST', '/sub-partner/payment', [
         'currency'            => $coin,
-        'amount'              => $amount,
+        'amount'              => $min > 0 ? $min : 1,
         'sub_partner_id'      => np_wallet_id($userId),
         'is_fixed_rate'       => false,
         'is_fee_paid_by_user' => false,
@@ -279,13 +287,80 @@ function crypto_deposit_address(int $userId, string $coin, float $amount): array
     ]);
     $p = $res['body']['result'] ?? [];
     if (!$res['ok'] || empty($p['pay_address']) || empty($p['payment_id'])) {
-        throw new UserError('We could not create a deposit address: ' . np_message($res, 'please try again') . '.');
+        throw new UserError('We could not create your ' . strtoupper($coin) . ' address: ' . np_message($res, 'please try again') . '.');
     }
     $expires = $p['expiration_estimate_date'] ?? $p['valid_until'] ?? null;
     $expires = is_string($expires) && strtotime($expires) ? date('Y-m-d H:i:s', strtotime($expires)) : date('Y-m-d H:i:s', time() + 7 * 86400);
+    $vals = [(string)$p['payment_id'], (string)$p['pay_address'], ($p['payin_extra_id'] ?? null) ?: null, (float)($p['pay_amount'] ?? $min), $expires];
+    if ($w) {
+        q('UPDATE crypto_wallets SET payment_id = ?, address = ?, extra_id = ?, min_amount = ?, expires_at = ? WHERE id = ?', array_merge($vals, [$w['id']]));
+        q('UPDATE crypto_deposits SET status = "expired" WHERE user_id = ? AND coin = ? AND status = "waiting"', [$userId, $coin]);
+    } else {
+        q('INSERT INTO crypto_wallets (payment_id, address, extra_id, min_amount, expires_at, user_id, coin) VALUES (?,?,?,?,?,?,?)', array_merge($vals, [$userId, $coin]));
+    }
     q('INSERT INTO crypto_deposits (user_id, payment_id, coin, pay_address, extra_id, pay_amount, expires_at) VALUES (?,?,?,?,?,?,?)',
-        [$userId, (string)$p['payment_id'], $coin, (string)$p['pay_address'], ($p['payin_extra_id'] ?? null) ?: null, (float)($p['pay_amount'] ?? $amount), $expires]);
-    return q_one('SELECT * FROM crypto_deposits WHERE id = ?', [db()->lastInsertId()]);
+        [$userId, $vals[0], $coin, $vals[1], $vals[2], $vals[3], $expires]);
+    return q_one('SELECT * FROM crypto_wallets WHERE user_id = ? AND coin = ?', [$userId, $coin]);
+}
+
+/** A deposit NOWPayments told us about that we haven't seen (a repeat deposit to a saved address): record it. */
+function crypto_adopt_deposit(array $p): ?array
+{
+    $id = (string)($p['payment_id'] ?? '');
+    if ($id === '') {
+        return null;
+    }
+    if ($row = q_one('SELECT * FROM crypto_deposits WHERE payment_id = ?', [$id])) {
+        return $row;
+    }
+    $parent = (string)($p['parent_payment_id'] ?? '');
+    $address = (string)($p['pay_address'] ?? '');
+    $w = null;
+    if ($parent !== '') {
+        $w = q_one('SELECT w.* FROM crypto_wallets w WHERE w.payment_id = ?', [$parent])
+            ?: q_one('SELECT w.* FROM crypto_deposits d JOIN crypto_wallets w ON w.user_id = d.user_id AND w.coin = d.coin WHERE d.payment_id = ?', [$parent]);
+    }
+    if (!$w && $address !== '') {
+        $w = q_one('SELECT * FROM crypto_wallets WHERE address = ?', [$address]);
+    }
+    if (!$w) {
+        return null;
+    }
+    q('INSERT IGNORE INTO crypto_deposits (user_id, payment_id, coin, pay_address, extra_id, pay_amount) VALUES (?,?,?,?,?,?)',
+        [$w['user_id'], $id, $w['coin'], $w['address'], $w['extra_id'], (float)($p['pay_amount'] ?? 0)]);
+    return q_one('SELECT * FROM crypto_deposits WHERE payment_id = ?', [$id]);
+}
+
+/** Pull the customer's recent deposits from NOWPayments, so nothing is missed if a webhook was. */
+function crypto_sync(int $userId): void
+{
+    $sub = (string)q_val('SELECT np_sub_id FROM users WHERE id = ?', [$userId]);
+    if ($sub === '') {
+        return;
+    }
+    $res = np_request('GET', '/sub-partner/payments?sub_partner_id=' . rawurlencode($sub) . '&limit=50&page=0&orderBy=desc&sortBy=created_at', null, 'jwt');
+    $list = $res['body']['result'] ?? $res['body']['data'] ?? $res['body']['payments'] ?? [];
+    if (isset($list['data']) && is_array($list['data'])) {
+        $list = $list['data'];
+    }
+    foreach ((array)$list as $p) {
+        if (is_array($p) && !empty($p['payment_id']) && crypto_adopt_deposit($p)) {
+            crypto_refresh_deposit((string)$p['payment_id']);
+        }
+    }
+    foreach (q('SELECT payment_id FROM crypto_deposits WHERE user_id = ? AND status IN ("waiting","confirming","confirmed","sending") AND created_at > NOW() - INTERVAL 8 DAY', [$userId])->fetchAll(PDO::FETCH_COLUMN) as $pid) {
+        crypto_refresh_deposit((string)$pid);
+    }
+}
+
+/** Logo for a coin from NOWPayments, or '' when unknown. */
+function coin_logo(string $code): string
+{
+    $logo = (string)(np_coins()[$code][3] ?? '');
+    if ($logo === '') {
+        return '';
+    }
+    return str_starts_with($logo, 'http') ? $logo : 'https://nowpayments.io' . $logo;
 }
 
 /** Coin amounts without trailing zeros: 0.00012 rather than 0.0001200000. */
@@ -333,6 +408,7 @@ function crypto_refresh_deposit(string $paymentId): ?array
     q('UPDATE crypto_deposits SET status = ?, actually_paid = ? WHERE id = ?', [$status, $paid, $row['id']]);
     if (in_array($status, ['finished', 'partially_paid'], true) && !$row['credited']) {
         $n = q('UPDATE crypto_deposits SET credited = 1 WHERE id = ? AND credited = 0', [$row['id']])->rowCount();
+        q('UPDATE crypto_wallets SET funded = 1, expires_at = NULL WHERE user_id = ? AND coin = ? AND (payment_id = ? OR address = ?)', [$row['user_id'], $row['coin'], $row['payment_id'], $row['pay_address']]);
         if ($n) {
             notify((int)$row['user_id'], 'Crypto received', coin_amount($paid) . ' ' . strtoupper($row['coin']) . ' has arrived in your crypto savings.', 'crypto.php', true);
         }

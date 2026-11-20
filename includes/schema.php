@@ -352,6 +352,22 @@ return [
   CONSTRAINT fk_cd_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
+"CREATE TABLE IF NOT EXISTS crypto_wallets (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  coin VARCHAR(30) NOT NULL,
+  address VARCHAR(255) NOT NULL,
+  extra_id VARCHAR(100) NULL,
+  payment_id VARCHAR(30) NOT NULL,
+  min_amount DECIMAL(30,10) NULL,
+  funded TINYINT(1) NOT NULL DEFAULT 0,
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_wallet_coin (user_id, coin),
+  KEY idx_wallet_address (address(64)),
+  CONSTRAINT fk_cwal_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
 "CREATE TABLE IF NOT EXISTS crypto_withdrawals (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL,
