@@ -155,7 +155,7 @@ function integration_test(string $service): string
             if (!mail_enabled()) return 'Email: add your mailbox details (or a Resend key) first.';
             $to = (string)$GLOBALS['me']['email'];
             $ok = send_mail($to, 'Test email · ' . APP_NAME, email_html('Email is working 🎉', "This is a test from " . APP_NAME . ".\n\nCustomers will now get their approvals, payments, reminders and password resets by email.", absolute_url('dashboard.php'), 'Open ' . APP_NAME));
-            return $ok ? 'Test email sent to ' . $to . ' via ' . (smtp_configured() ? 'your mailbox (' . int_key('smtp_host') . ')' : 'Resend') . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
+            return $ok ? 'Test email sent to ' . $to . ' via ' . (smtp_configured() ? 'your mailbox (' . smtp_user() . ' on ' . smtp_host() . ':' . smtp_port() . ')' : 'Resend') . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
     }
 }
 
@@ -236,13 +236,15 @@ app_header('Integrations', 'integrations', 'admin');
   <div class="card" id="email">
     <div class="card-head"><h2>Email</h2><?= mail_enabled() ? '<span class="badge badge-ok">Connected · ' . (smtp_configured() ? 'mailbox' : 'Resend') . '</span>' : '<span class="badge badge-warn">Not set up</span>' ?></div>
     <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="email">
-      <p class="small muted" style="margin:0"><strong>Easiest: use a mailbox on your hosting.</strong> In cPanel → <em>Email Accounts</em> create e.g. <code>no-reply@<?= e(parse_url(absolute_url(''), PHP_URL_HOST) ?: 'yourdomain.com') ?></code>, then open <em>Connect Devices</em> next to it and copy the <strong>Outgoing server</strong> and <strong>SMTP port</strong> (465) from "Secure SSL/TLS settings".</p>
-      <div class="form-grid">
-        <?php foreach (['smtp_host', 'smtp_port'] as $n) $field($n, INT_FORMS['email'][$n]); ?>
-      </div>
-      <div class="form-grid">
-        <?php foreach (['smtp_user', 'smtp_pass'] as $n) $field($n, INT_FORMS['email'][$n]); ?>
-      </div>
+      <div class="alert alert-info small" style="margin:0">Ready for your hosting mailbox <strong><?= e(smtp_user()) ?></strong> on <strong><?= e(smtp_host()) ?></strong>, port <strong><?= smtp_port() ?></strong> (SSL). <strong>Just enter the mailbox password below</strong>, then press <em>Send test email to me</em>.</div>
+      <?php $field('smtp_pass', INT_FORMS['email']['smtp_pass']); ?>
+      <details><summary class="small">Use a different server or mailbox</summary>
+        <div class="form" style="margin-top:.6rem">
+          <div class="form-grid"><?php foreach (['smtp_host', 'smtp_port'] as $n) $field($n, INT_FORMS['email'][$n]); ?></div>
+          <?php $field('smtp_user', INT_FORMS['email']['smtp_user']); ?>
+          <p class="small muted" style="margin:0">Leave blank to use the values above. They come from cPanel → Email Accounts → Connect Devices → "Secure SSL/TLS settings".</p>
+        </div>
+      </details>
       <?php $field('mail_from', INT_FORMS['email']['mail_from']); ?>
       <p class="small muted" style="margin:0">Leave "Send from" blank to use the mailbox address, or write it like <code><?= e(APP_NAME) ?> &lt;no-reply@yourdomain.com&gt;</code> (same address as the mailbox).</p>
       <details><summary class="small">Or use Resend instead of a mailbox</summary>

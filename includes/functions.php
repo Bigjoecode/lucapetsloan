@@ -1144,7 +1144,7 @@ function mail_enabled(): bool
 
 function smtp_configured(): bool
 {
-    return int_key('smtp_host') !== '' && int_key('smtp_user') !== '' && int_key('smtp_pass') !== '';
+    return int_key('smtp_pass') !== '' && smtp_host() !== '' && smtp_user() !== '';
 }
 
 /** Why the last email failed, for the Integrations test (never shown to customers). */
@@ -1202,8 +1202,8 @@ function mail_from_parts(): array
  */
 function smtp_send(string $to, string $subject, string $html): bool
 {
-    $host = int_key('smtp_host');
-    $port = (int)(int_key('smtp_port') ?: 465);
+    $host = smtp_host();
+    $port = smtp_port();
     $secure = $port === 465 ? 'ssl' : ($port === 587 ? 'tls' : 'none');
     [$fromName, $fromAddr] = mail_from_parts();
     $fail = function (string $why) use (&$fp): bool {
@@ -1247,7 +1247,7 @@ function smtp_send(string $to, string $subject, string $html): bool
         if ($e = $cmd($ehlo, [250])) return $fail('EHLO: ' . $e);
     }
     if ($e = $cmd('AUTH LOGIN', [334])) return $fail('AUTH: ' . $e);
-    if ($e = $cmd(base64_encode(int_key('smtp_user')), [334])) return $fail('username: ' . $e);
+    if ($e = $cmd(base64_encode(smtp_user()), [334])) return $fail('username: ' . $e);
     if ($e = $cmd(base64_encode(int_key('smtp_pass')), [235])) return $fail('the mailbox password was refused (' . $e . ')');
     if ($e = $cmd('MAIL FROM:<' . $fromAddr . '>', [250])) return $fail('sender refused: ' . $e);
     if ($e = $cmd('RCPT TO:<' . $to . '>', [250, 251])) return $fail('recipient refused: ' . $e);

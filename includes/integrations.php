@@ -101,6 +101,29 @@ function flw_hash(): string
     return int_key('flw_' . flw_mode() . '_hash');
 }
 
+/* Hosting mailbox: only the password has to be entered. Server and mailbox default to this
+   site's own domain (as cPanel's "Connect Devices" shows for a mailbox on the same hosting). */
+function site_domain(): string
+{
+    $h = strtolower((string)(parse_url(absolute_url(''), PHP_URL_HOST) ?: ''));
+    return str_starts_with($h, 'www.') ? substr($h, 4) : $h;
+}
+
+function smtp_host(): string
+{
+    return int_key('smtp_host') ?: site_domain();
+}
+
+function smtp_port(): int
+{
+    return (int)(int_key('smtp_port') ?: 465);
+}
+
+function smtp_user(): string
+{
+    return int_key('smtp_user') ?: (site_domain() !== '' ? 'no-reply@' . site_domain() : '');
+}
+
 function resend_key(): string
 {
     return int_key('resend_api_key');
@@ -111,5 +134,5 @@ function mail_from(): string
     if (int_key('mail_from') !== '') {
         return int_key('mail_from');
     }
-    return APP_NAME . ' <' . (smtp_configured() && str_contains(int_key('smtp_user'), '@') ? int_key('smtp_user') : 'onboarding@resend.dev') . '>';
+    return APP_NAME . ' <' . (smtp_configured() && str_contains(smtp_user(), '@') ? smtp_user() : 'onboarding@resend.dev') . '>';
 }
