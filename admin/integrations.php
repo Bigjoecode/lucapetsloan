@@ -116,17 +116,28 @@ function integration_test(string $service): string
             return 'Flutterwave (' . flw_mode() . ') is working. NGN balance: ' . money($res['body']['data']['available_balance'] ?? 0) . '.';
         case 'nowpayments':
             if (int_key('np_api_key') === '') return 'NOWPayments: no API key saved yet.';
+            q('DELETE FROM settings WHERE k LIKE "cache\_np\_%"');
+            $ip = server_public_ip();
+            $ipHint = $ip !== '' ? ' If IP whitelisting is on in NOWPayments (Settings → Whitelist), add this server\'s address: ' . $ip . '.' : '';
             $res = np_request('GET', '/merchant/coins');
-            if (!$res['ok']) return 'NOWPayments (' . np_mode() . '): API key rejected · ' . np_message($res, 'HTTP ' . $res['http']) . '.';
+            if (!$res['ok']) return 'NOWPayments (' . np_mode() . '): API key refused · ' . np_message($res, 'HTTP ' . $res['http']) . '. Check the key is from your ' . (np_mode() === 'live' ? 'live' : 'sandbox') . ' account.' . $ipHint;
             $coins = count((array)($res['body']['selectedCurrencies'] ?? $res['body']['currencies'] ?? []));
+            if ($coins === 0) return 'NOWPayments key works, but no coins are switched on. Tick coins in NOWPayments → Settings → Coins.';
             if (!np_configured()) return 'NOWPayments API key works (' . $coins . ' coins). Add the account email and password so customer wallets can be opened.';
             try {
                 np_jwt();
             } catch (UserError) {
-                return 'NOWPayments API key works, but the account email or password was refused.';
+                return 'NOWPayments API key works, but the account sign-in was refused (' . np_last_error() . '). Check the email and password; if your NOWPayments login uses two-factor codes, ask NOWPayments support whether API sign-in works with it.';
             }
-            q('DELETE FROM settings WHERE k LIKE "cache\_np\_%"');
-            return 'NOWPayments (' . np_mode() . ') is working: ' . $coins . ' coins switched on, account sign-in OK.';
+            // Customer wallets: open (or reuse) one for this admin and read its balance, the same calls customers make.
+            try {
+                $sub = np_wallet_id((int)$GLOBALS['me']['id']);
+            } catch (UserError $e) {
+                return 'NOWPayments sign-in works, but a customer wallet could not be opened (' . np_last_error() . '). Make sure Custody is enabled in NOWPayments → Settings → Payments.' . $ipHint;
+            }
+            $bal = np_request('GET', '/sub-partner/balance/' . rawurlencode($sub));
+            if (!$bal['ok']) return 'NOWPayments: wallets open, but balances are refused (' . np_last_error() . ').' . $ipHint;
+            return 'NOWPayments (' . np_mode() . ') is working: ' . $coins . ' coins switched on, sign-in OK, customer wallets and balances OK' . ($ip !== '' ? ' (server address ' . $ip . ')' : '') . '.';
         case 'termii':
             if (termii_key() === '') return 'Termii: no API key saved yet.';
             [$http, $b] = $get(TERMII_BASE_URL . '/get-balance?api_key=' . rawurlencode(termii_key()), ['Accept: application/json']);

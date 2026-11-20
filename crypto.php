@@ -42,23 +42,58 @@ if (is_post()) {
 }
 
 $on = crypto_on();
-$error = null;
+$problems = [];        // what went wrong, in customer words
+$adminDetail = [];     // NOWPayments' own answers, for super admins
 $wallet = '';
 $balances = [];
+$balanceOk = true;
 $coins = [];
 if ($on) {
+    // Each step on its own, so one failing call never hides the rest of the page.
+    try {
+        $coins = np_coins();
+    } catch (Throwable $e) {
+        $coins = [];
+    }
+    if (!$coins) {
+        $problems[] = 'The list of coins could not be loaded.';
+        $adminDetail[] = np_last_error() ?: 'No coins are switched on in NOWPayments → Settings → Coins.';
+    }
     try {
         $wallet = np_wallet_id($uid);
-        $coins = np_coins();
-        if (time() - (int)($_SESSION['crypto_synced'] ?? 0) > 120) {   // catch deposits a webhook may have missed
-            crypto_sync($uid);
-            $_SESSION['crypto_synced'] = time();
-        }
-        $balances = crypto_balances($uid);
     } catch (UserError $e) {
-        $error = $e->getMessage();
+        $problems[] = 'Your crypto wallet could not be opened yet.';
+        $adminDetail[] = np_last_error() ?: $e->getMessage();
+    }
+    if ($wallet !== '') {
+        try {
+            if (time() - (int)($_SESSION['crypto_synced'] ?? 0) > 120) {   // catch deposits a webhook may have missed
+                crypto_sync($uid);
+                $_SESSION['crypto_synced'] = time();
+            }
+        } catch (Throwable $e) {
+            // syncing is a bonus; the webhook still records deposits
+        }
+        try {
+            $balances = crypto_balances($uid);
+        } catch (UserError $e) {
+            $balanceOk = false;
+            $problems[] = 'Your balance could not be loaded just now. You can still get your address and deposit.';
+            $adminDetail[] = np_last_error();
+        }
     }
 }
+if (!$balanceOk) {
+    // Show what we know from recorded deposits and withdrawals until NOWPayments answers again.
+    foreach (q('SELECT coin, SUM(actually_paid) s FROM crypto_deposits WHERE user_id = ? AND credited = 1 GROUP BY coin', [$uid])->fetchAll() as $r) {
+        $balances[$r['coin']] = [(float)$r['s'], 0.0];
+    }
+    foreach (q('SELECT coin, SUM(amount) s FROM crypto_withdrawals WHERE user_id = ? AND status IN ("processing","sent") GROUP BY coin', [$uid])->fetchAll() as $r) {
+        if (isset($balances[$r['coin']])) $balances[$r['coin']][0] = max(0, $balances[$r['coin']][0] - (float)$r['s']);
+    }
+    $balances = array_filter($balances, fn($b) => $b[0] > 0);
+}
+$adminDetail = array_values(array_unique(array_filter($adminDetail)));
 $addresses = q('SELECT * FROM crypto_wallets WHERE user_id = ? ORDER BY funded DESC, id', [$uid])->fetchAll();
 $byCoin = array_column($addresses, null, 'coin');
 $pick = strtolower((string)($_GET['coin'] ?? ''));
@@ -103,7 +138,29 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
   <?php endif; ?>
 <?php app_footer(); exit; endif; ?>
 
-<?php if ($error): ?><div class="alert alert-error" style="margin:0"><?= e($error) ?></div><?php endif; ?>
+<?php if ($problems): ?>
+  <div class="alert alert-warn" style="margin:0">
+    <?= e(implode(' ', $problems)) ?>
+    <?php if (is_super($u) && $adminDetail): $ip = server_public_ip(); ?>
+      <div class="small" style="margin-top:.5rem;font-weight:500"><strong>Admin details</strong> (only super admins see this): NOWPayments said <code><?= e(implode(' | ', $adminDetail)) ?></code>.
+        <?php if ($ip !== ''): ?>If IP whitelisting is on in NOWPayments (Settings → Whitelist), add this server's address <code><?= e($ip) ?></code>.<?php endif; ?>
+        <?php if (IS_VERCEL): ?>This copy runs on Vercel, which has no fixed address, so whitelisted calls can fail here; use <a href="https://lucapetsloan.com/crypto.php">lucapetsloan.com</a>.<?php endif; ?>
+        <a href="<?= url('admin/integrations.php#nowpayments') ?>">Run Test connection</a>.</div>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
+
+<?php if (!$addresses && $coins): ?>
+  <section class="card start-crypto">
+    <div class="row" style="gap:.9rem;flex-wrap:nowrap;align-items:flex-start"><span class="sq sq-gold"><?= icon('coin', 22) ?></span>
+      <div><h2 style="margin:0">Start saving in crypto</h2><p class="muted small" style="margin:.2rem 0 0">Three steps: choose a coin, copy your address, send from any wallet or exchange (Binance, Bybit, Trust Wallet…).</p></div></div>
+    <form method="post" class="row" style="margin-top:1rem;flex-wrap:nowrap">
+      <?= csrf_field() ?><input type="hidden" name="action" value="address">
+      <select name="coin" required style="flex:1;min-width:0"><?php foreach ($coins as $code => $c): ?><option value="<?= e($code) ?>"><?= e(coin_label($code)) ?></option><?php endforeach; ?></select>
+      <button class="btn btn-primary"><?= icon('down', 16) ?> Get my address</button>
+    </form>
+  </section>
+<?php endif; ?>
 
 <section class="acct crypto-hero">
   <div class="head">

@@ -64,8 +64,29 @@ function np_request(string $method, string $path, ?array $payload = null, string
     $ok = $http >= 200 && $http < 300 && is_array($data);
     if (!$ok) {
         error_log('[lucapetloan] nowpayments ' . $method . ' ' . $path . ' failed: HTTP ' . $http . ' ' . $err . ' ' . substr((string)$raw, 0, 300));
+        $msg = is_array($data) ? ($data['message'] ?? $data['msg'] ?? $data['error'] ?? '') : '';
+        $GLOBALS['np_last_error'] = strtok($path, '?') . ' → ' . ($http ? 'HTTP ' . $http : 'no response' . ($err !== '' ? ' (' . $err . ')' : '')) . (is_string($msg) && $msg !== '' ? ': ' . $msg : '');
     }
     return ['ok' => $ok, 'http' => $http, 'body' => is_array($data) ? $data : []];
+}
+
+/** What NOWPayments said on the last failed call (shown to super admins only). */
+function np_last_error(): string
+{
+    return (string)($GLOBALS['np_last_error'] ?? '');
+}
+
+/** This server's public IP, which NOWPayments must whitelist when IP whitelisting is on (cached a day). */
+function server_public_ip(): string
+{
+    $r = np_cached('server_ip', 86400, function (): array {
+        $ch = curl_init('https://api.ipify.org');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6]);
+        $ip = trim((string)curl_exec($ch));
+        curl_close($ch);
+        return filter_var($ip, FILTER_VALIDATE_IP) ? ['ip' => $ip] : [];
+    });
+    return (string)($r['ip'] ?? '');
 }
 
 function np_message(array $res, string $fallback): string
