@@ -57,7 +57,7 @@ define('APP_TAGLINE', 'Save daily. Borrow smart.');
 define('BASE_URL', env('BASE_URL', IS_VERCEL ? '' : '/lucapetloan'));   // URL path where the app lives (no trailing slash)
 define('CURRENCY', '₦');
 define('SUPPORT_PHONE', env('SUPPORT_PHONE', '+234 800 000 0000'));
-define('SUPPORT_EMAIL', env('SUPPORT_EMAIL', 'support@lucapetloan.test'));
+define('SUPPORT_EMAIL', env('SUPPORT_EMAIL', 'support@lucapetsloan.com'));
 
 // Business rules. These are only the starting values: the super admin changes
 // them under Settings, and the saved values live in the settings table.
