@@ -1139,7 +1139,13 @@ function absolute_url(string $path): string
 /** True when emails can be sent: a hosting mailbox (SMTP) or a Resend key is set up under Integrations. */
 function mail_enabled(): bool
 {
-    return smtp_configured() || resend_key() !== '';
+    return setting('mail_server') || smtp_configured() || resend_key() !== '';
+}
+
+/** Which way email goes out: the server's built-in mail, the hosting mailbox (SMTP), or Resend. */
+function mail_method(): string
+{
+    return setting('mail_server') ? 'server' : (smtp_configured() ? 'mailbox' : (resend_key() !== '' ? 'resend' : ''));
 }
 
 function smtp_configured(): bool
@@ -1161,7 +1167,11 @@ function send_mail(string $to, string $subject, string $html): bool
         $GLOBALS['mail_last_error'] = 'No email service is set up.';
         return false;
     }
-    $ok = smtp_configured() ? smtp_send($to, $subject, $html) : resend_send($to, $subject, $html);
+    $ok = match (mail_method()) {
+        'server'  => server_mail_send($to, $subject, $html),
+        'mailbox' => smtp_send($to, $subject, $html),
+        default   => resend_send($to, $subject, $html),
+    };
     if (!$ok) {
         error_log('[lucapetloan] email to ' . $to . ' failed: ' . mail_last_error());
     }
@@ -1252,25 +1262,51 @@ function smtp_send(string $to, string $subject, string $html): bool
     if ($e = $cmd('MAIL FROM:<' . $fromAddr . '>', [250])) return $fail('sender refused: ' . $e);
     if ($e = $cmd('RCPT TO:<' . $to . '>', [250, 251])) return $fail('recipient refused: ' . $e);
     if ($e = $cmd('DATA', [354])) return $fail('DATA: ' . $e);
-    $boundary = 'lpl' . bin2hex(random_bytes(8));
-    $text = trim(html_entity_decode(strip_tags(preg_replace('#<(br|/p|/h1|/tr)[^>]*>#i', "\n", $html)), ENT_QUOTES, 'UTF-8'));
+    [$headers, $body] = mime_message($to, $subject, $html, $fromName, $fromAddr);
     $enc = fn(string $s) => '=?UTF-8?B?' . base64_encode($s) . '?=';
-    $domain = substr(strrchr($fromAddr, '@') ?: '@localhost', 1);
-    $msg = 'Date: ' . date('r') . "\r\n"
-        . 'From: ' . $enc($fromName) . ' <' . $fromAddr . ">\r\n"
-        . 'To: <' . $to . ">\r\n"
-        . 'Subject: ' . $enc($subject) . "\r\n"
-        . 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $domain . ">\r\n"
-        . "MIME-Version: 1.0\r\n"
-        . 'Content-Type: multipart/alternative; boundary="' . $boundary . "\"\r\n\r\n"
-        . '--' . $boundary . "\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text)) . "\r\n"
-        . '--' . $boundary . "\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html)) . "\r\n"
-        . '--' . $boundary . "--\r\n";
+    $msg = $headers . 'To: <' . $to . ">\r\nSubject: " . $enc($subject) . "\r\n\r\n" . $body;
     fwrite($fp, $msg . ".\r\n");   // base64 lines never start with ".", so no dot-stuffing is needed
     if ($e = $cmd('', [250])) return $fail('message refused: ' . $e);
     fwrite($fp, "QUIT\r\n");
     fclose($fp);
     return true;
+}
+
+/** Headers (without To/Subject) and a text + HTML body for an email. */
+function mime_message(string $to, string $subject, string $html, string $fromName, string $fromAddr): array
+{
+    $boundary = 'lpl' . bin2hex(random_bytes(8));
+    $text = trim(html_entity_decode(strip_tags(preg_replace('#<(br|/p|/h1|/tr)[^>]*>#i', "\n", $html)), ENT_QUOTES, 'UTF-8'));
+    $enc = fn(string $s) => '=?UTF-8?B?' . base64_encode($s) . '?=';
+    $domain = substr(strrchr($fromAddr, '@') ?: '@localhost', 1);
+    $headers = 'Date: ' . date('r') . "\r\n"
+        . 'From: ' . $enc($fromName) . ' <' . $fromAddr . ">\r\n"
+        . 'Reply-To: ' . (filter_var(SUPPORT_EMAIL, FILTER_VALIDATE_EMAIL) && !str_ends_with(SUPPORT_EMAIL, '.test') ? SUPPORT_EMAIL : $fromAddr) . "\r\n"
+        . 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $domain . ">\r\n"
+        . "MIME-Version: 1.0\r\n"
+        . 'Content-Type: multipart/alternative; boundary="' . $boundary . "\"\r\n";
+    $body = '--' . $boundary . "\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text)) . "\r\n"
+        . '--' . $boundary . "\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html)) . "\r\n"
+        . '--' . $boundary . "--\r\n";
+    return [$headers, $body];
+}
+
+/** The hosting server's built-in mail (cPanel): no mailbox password needed. */
+function server_mail_send(string $to, string $subject, string $html): bool
+{
+    $fromAddr = smtp_user();
+    $fromName = APP_NAME;
+    if (int_key('mail_from') !== '') {
+        [$fromName, $fromAddr] = mail_from_parts();
+    }
+    [$headers, $body] = mime_message($to, $subject, $html, $fromName, $fromAddr);
+    $headers = preg_replace('/^Date: [^\r]*\r\n/', '', $headers);   // mail() adds its own Date header
+    $ok = @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, rtrim($headers, "\r\n"), '-f' . $fromAddr);
+    if (!$ok) {
+        $err = error_get_last();
+        $GLOBALS['mail_last_error'] = 'Server mail: the server would not accept the message' . ($err ? ' (' . $err['message'] . ')' : '') . '. Ask your host whether PHP mail is allowed, or use the mailbox password instead.';
+    }
+    return $ok;
 }
 
 /* ------------------------------------------------------------------ */

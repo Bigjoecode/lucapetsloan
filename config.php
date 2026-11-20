@@ -75,6 +75,7 @@ const SETTING_DEFAULTS = [
     'auto_payout_daily_limit' => 50000, // per customer per day; above it (or 0 = no limit) staff approve
     'auto_approve_repeat'  => 1,        // approve loans instantly for customers with an on-time repayment record
     'auto_disburse'        => 1,        // pay instantly approved loans straight to the customer's bank
+    'mail_server'          => 0,        // send email with the hosting server's built-in mail (no mailbox password)
     'email_alerts'         => 1,        // email important alerts and reminders (email set up under Integrations)
     'savings_email_reminders' => 0,     // daily email nudge when a plan hasn't been paid that day
     // Borrowing limit by credit level; savings add up to the same amount again.

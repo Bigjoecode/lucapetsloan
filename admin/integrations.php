@@ -63,6 +63,13 @@ if (is_post()) {
                 notify_staff('payments', 'Flutterwave switched to ' . strtoupper($mode), $mode === 'live' ? 'Real money now moves through Flutterwave.' : 'Payments now use test mode; no real money moves.', 'admin/integrations.php');
             }
         }
+        if ($service === 'email') {
+            $srv = post('mail_server') ? 1 : 0;
+            if ($srv !== setting('mail_server')) {
+                save_setting('mail_server', $srv);
+                $changed[] = $srv ? 'sending with the server\'s built-in mail' : 'server mail off';
+            }
+        }
         if ($service === 'nowpayments') {
             $mode = post('np_mode') === 'live' ? 'live' : 'sandbox';
             if ($mode !== np_mode()) {
@@ -155,7 +162,7 @@ function integration_test(string $service): string
             if (!mail_enabled()) return 'Email: add your mailbox details (or a Resend key) first.';
             $to = (string)$GLOBALS['me']['email'];
             $ok = send_mail($to, 'Test email · ' . APP_NAME, email_html('Email is working 🎉', "This is a test from " . APP_NAME . ".\n\nCustomers will now get their approvals, payments, reminders and password resets by email.", absolute_url('dashboard.php'), 'Open ' . APP_NAME));
-            return $ok ? 'Test email sent to ' . $to . ' via ' . (smtp_configured() ? 'your mailbox (' . smtp_user() . ' on ' . smtp_host() . ':' . smtp_port() . ')' : 'Resend') . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
+            return $ok ? 'Test email sent to ' . $to . ' via ' . ['server' => 'the server\'s built-in mail (from ' . smtp_user() . ')', 'mailbox' => 'your mailbox (' . smtp_user() . ' on ' . smtp_host() . ':' . smtp_port() . ')', 'resend' => 'Resend'][mail_method()] . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
     }
 }
 
@@ -234,9 +241,10 @@ app_header('Integrations', 'integrations', 'admin');
     </form>
   </div>
   <div class="card" id="email">
-    <div class="card-head"><h2>Email</h2><?= mail_enabled() ? '<span class="badge badge-ok">Connected · ' . (smtp_configured() ? 'mailbox' : 'Resend') . '</span>' : '<span class="badge badge-warn">Not set up</span>' ?></div>
+    <div class="card-head"><h2>Email</h2><?= mail_enabled() ? '<span class="badge badge-ok">Connected · ' . ['server' => 'server mail', 'mailbox' => 'mailbox', 'resend' => 'Resend'][mail_method()] . '</span>' : '<span class="badge badge-warn">Not set up</span>' ?></div>
     <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="email">
       <div class="alert alert-info small" style="margin:0">Ready for your hosting mailbox <strong><?= e(smtp_user()) ?></strong> on <strong><?= e(smtp_host()) ?></strong>, port <strong><?= smtp_port() ?></strong> (SSL). <strong>Just enter the mailbox password below</strong>, then press <em>Send test email to me</em>.</div>
+      <label class="check" style="padding:.7rem .8rem;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)"><input type="checkbox" name="mail_server" value="1" <?= setting('mail_server') ? 'checked' : '' ?>><span><strong>Send with the server's built-in mail</strong> (no password needed)<br><span class="small muted">Sends from <?= e(smtp_user()) ?> through your hosting. Use this if the mailbox password keeps being refused.</span></span></label>
       <?php $field('smtp_pass', INT_FORMS['email']['smtp_pass']); ?>
       <details><summary class="small">Use a different server or mailbox</summary>
         <div class="form" style="margin-top:.6rem">

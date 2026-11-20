@@ -140,5 +140,5 @@ function mail_from(): string
     if (int_key('mail_from') !== '') {
         return int_key('mail_from');
     }
-    return APP_NAME . ' <' . (smtp_configured() && str_contains(smtp_user(), '@') ? smtp_user() : 'onboarding@resend.dev') . '>';
+    return APP_NAME . ' <' . ((setting('mail_server') || smtp_configured()) && str_contains(smtp_user(), '@') ? smtp_user() : 'onboarding@resend.dev') . '>';
 }
