@@ -8,21 +8,12 @@
   },
   "routes": [
     {
-      "src": "/assets/(.*)",
-      "dest": "/assets/$1",
+      "src": "/(.*)",
+      "status": 308,
       "headers": {
+        "Location": "https://lucapetsloan.com/$1",
         "cache-control": "public, max-age=3600"
       }
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.php"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/cron.php",
-      "schedule": "0 7 * * *"
     }
   ]
 }
