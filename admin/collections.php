@@ -10,10 +10,10 @@ if (is_post()) {
         flash('error', 'Loan not found or already closed.');
     } elseif (post('action') === 'remind') {
         $s = loan_snapshot($loan);
-        $sent = sms_user((int)$loan['user_id'], 'Payment reminder', 'Loan #' . $lid . ' is ' . $s['late_days'] . ' days late. Please pay ' . money($s['payoff'])
-            . ' in the app or call ' . SUPPORT_PHONE . ' to agree a plan.', 'collect_sms', $lid . '-' . date('Y-m-d'));
-        q('INSERT INTO collection_notes (loan_id, staff_id, outcome, note) VALUES (?, ?, "sms", ?)', [$lid, $me['id'], $sent ? 'Reminder SMS sent' : 'Reminder SMS not sent (already sent today or SMS is off)']);
-        flash($sent ? 'success' : 'info', $sent ? 'Reminder sent to ' . $loan['full_name'] . '.' : 'No SMS sent: one was already sent today, or SMS is switched off.');
+        $sent = message_user((int)$loan['user_id'], 'Payment reminder', 'Loan #' . $lid . ' is ' . $s['late_days'] . ' days late. Please pay ' . money($s['payoff'])
+            . ' in the app or call ' . SUPPORT_PHONE . ' to agree a plan.', 'loan.php?id=' . $lid, 'collect_email', $lid . '-' . date('Y-m-d'));
+        q('INSERT INTO collection_notes (loan_id, staff_id, outcome, note) VALUES (?, ?, "email", ?)', [$lid, $me['id'], $sent ? 'Reminder email sent' : 'Reminder email not sent (already sent today or email is off)']);
+        flash($sent ? 'success' : 'info', $sent ? 'Reminder emailed to ' . $loan['full_name'] . '.' : 'No email sent: one was already sent today, or email is not set up.');
     } elseif (post('action') === 'assign') {
         q('UPDATE loans SET collector_id = ? WHERE id = ?', [(int)post('collector_id') ?: null, $lid]);
         audit('collections.assign', 'Loan #' . $lid, (string)post('collector_id'));
@@ -98,7 +98,7 @@ app_header('Collections', 'collections', 'admin');
           </td>
           <td class="right">
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end"><?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $r['id'] ?>">
-              <button class="btn btn-ghost btn-sm" name="action" value="remind" title="Send a polite reminder SMS">SMS</button>
+              <button class="btn btn-ghost btn-sm" name="action" value="remind" title="Send a polite reminder email">Email</button>
               <a class="btn btn-primary btn-sm" href="loans.php?id=<?= $r['id'] ?>#collect">Log call</a>
             </form>
           </td>

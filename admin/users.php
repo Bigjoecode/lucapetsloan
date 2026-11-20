@@ -17,11 +17,15 @@ if (is_post()) {
     } elseif (post('action') === 'reset_link') {
         if ($target) {
             audit('customer.reset_link', 'User #' . $uid, $target['full_name']);
-            // Shown to staff once, to send the customer by SMS or WhatsApp after confirming who they are.
-            $_SESSION['reset_link'] = [
-                'name' => $target['full_name'], 'phone' => $target['phone'],
-                'url'  => absolute_url('reset_password.php?token=' . create_reset_token($uid, 24 * 60)),
-            ];
+            // Emailed to the customer when email is set up; also shown to staff once, to send by WhatsApp after confirming who they are.
+            $link = absolute_url('reset_password.php?token=' . create_reset_token($uid, 24 * 60));
+            $mailed = send_mail($target['email'], 'Reset your ' . APP_NAME . ' password', email_html('Reset your password',
+                'Hi ' . explode(' ', $target['full_name'])[0] . ",
+
+Our team created a password reset link for you. The button below works once, for 24 hours.
+
+If you didn't ask for this, call " . SUPPORT_PHONE . '.', $link, 'Choose a new password'));
+            $_SESSION['reset_link'] = ['name' => $target['full_name'], 'phone' => $target['phone'], 'email' => $target['email'], 'mailed' => $mailed, 'url' => $link];
         }
     }
     redirect('admin/users.php?' . http_build_query(['s' => $_GET['s'] ?? '']));
@@ -47,7 +51,7 @@ app_header('Customers', 'users', 'admin');
 <h1 class="mobile-title">Customers</h1>
 <?php if ($resetLink): ?>
   <div class="alert alert-info">
-    <strong>Password reset link for <?= e($resetLink['name']) ?></strong> (<?= e($resetLink['phone']) ?>). Send it to them by SMS or WhatsApp. It works once, for 24 hours, and won't be shown again.
+    <strong>Password reset link for <?= e($resetLink['name']) ?></strong> (<?= e($resetLink['phone']) ?>). <?= !empty($resetLink['mailed']) ? 'We emailed it to ' . e($resetLink['email']) . '. You can also send it by WhatsApp.' : 'Send it to them by WhatsApp.' ?> It works once, for 24 hours, and won't be shown again.
     <input readonly value="<?= e($resetLink['url']) ?>" onclick="this.select()" style="margin-top:.5rem;width:100%">
   </div>
 <?php endif; ?>

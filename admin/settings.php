@@ -31,8 +31,8 @@ if (is_post()) {
         'auto_payout_daily_limit' => (int)$num('auto_payout_daily_limit'),
         'auto_approve_repeat' => (int)(bool)post('auto_approve_repeat'),
         'auto_disburse'       => (int)(bool)post('auto_disburse'),
-        'sms_enabled'         => (int)(bool)post('sms_enabled'),
-        'savings_sms_reminders' => (int)(bool)post('savings_sms_reminders'),
+        'email_alerts'        => (int)(bool)post('email_alerts'),
+        'savings_email_reminders' => (int)(bool)post('savings_email_reminders'),
         'limit_starter'       => (int)$num('limit_starter'),
         'limit_bronze'        => (int)$num('limit_bronze'),
         'limit_silver'        => (int)$num('limit_silver'),
@@ -174,11 +174,11 @@ app_header('Settings', 'settings', 'admin');
     </div>
 
     <div class="card">
-      <h2>SMS</h2>
-      <div class="alert alert-<?= termii_key() ? 'success' : 'warn' ?>" style="margin-bottom:.8rem"><?= termii_key() ? 'Termii connected · sender <strong>' . e(termii_sender()) . '</strong> · ' . (int)q_val('SELECT COUNT(*) FROM messages_log WHERE status = "sent" AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)') . ' sent in the last 30 days.' : 'Not connected.' ?> <a href="<?= url('admin/integrations.php') ?>">Manage keys</a></div>
+      <h2>Email</h2>
+      <div class="alert alert-<?= mail_enabled() ? 'success' : 'warn' ?>" style="margin-bottom:.8rem"><?= mail_enabled() ? 'Email connected · from <strong>' . e(mail_from()) . '</strong> · ' . (int)q_val('SELECT COUNT(*) FROM messages_log WHERE channel = "email" AND status = "sent" AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)') . ' sent in the last 30 days.' : 'Not set up yet.' ?> <a href="<?= url('admin/integrations.php#email') ?>">Set up email</a></div>
       <div class="form">
-        <label class="check"><input type="checkbox" name="sms_enabled" value="1" <?= $on('sms_enabled') ?>><span class="small">Text customers about approvals, pay-outs, payments, due dates and security changes</span></label>
-        <label class="check"><input type="checkbox" name="savings_sms_reminders" value="1" <?= $on('savings_sms_reminders') ?>><span class="small">Also text a daily savings reminder when a plan hasn't been paid (one SMS per customer per day)</span></label>
+        <label class="check"><input type="checkbox" name="email_alerts" value="1" <?= $on('email_alerts') ?>><span class="small">Email customers about approvals, pay-outs, payments, due dates and security changes</span></label>
+        <label class="check"><input type="checkbox" name="savings_email_reminders" value="1" <?= $on('savings_email_reminders') ?>><span class="small">Also email a daily savings reminder when a plan hasn't been paid (one per customer per day)</span></label>
       </div>
     </div>
 

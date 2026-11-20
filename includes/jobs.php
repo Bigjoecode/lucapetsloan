@@ -8,14 +8,14 @@ declare(strict_types=1);
  * Safe to run more than once a day: every step checks what was already done.
  */
 
-/** In-app notice plus SMS, at most once per (kind, ref). */
+/** In-app notice plus email, at most once per (kind, ref). */
 function remind(int $userId, string $kind, string $ref, string $title, string $body, string $link): bool
 {
     if (message_sent($kind, $ref)) {
         return false;
     }
     notify($userId, $title, $body, $link);
-    if (!sms_user($userId, $title, $body, $kind, $ref)) {
+    if (!message_user($userId, $title, $body, $link, $kind, $ref)) {
         q('INSERT INTO messages_log (user_id, channel, recipient, kind, ref, body, status) VALUES (?, "app", "", ?, ?, ?, "sent")',
             [$userId, $kind, $ref, mb_substr($title . '. ' . $body, 0, 500)]);
     }
@@ -135,7 +135,7 @@ function run_daily_jobs(int $budgetSeconds = 50): array
     }
 
     // 4. Optional daily savings nudge, one per customer.
-    if (setting('savings_sms_reminders')) {
+    if (setting('savings_email_reminders')) {
         $rows = q('SELECT p.user_id, MIN(p.daily_amount) amt FROM savings_plans p JOIN users u ON u.id = p.user_id AND u.status = "active"
                    WHERE p.status = "active" AND p.auto_save = 0
                      AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.savings_plan_id = p.id AND t.type = "deposit" AND DATE(t.created_at) = CURDATE())

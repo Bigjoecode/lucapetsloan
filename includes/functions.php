@@ -308,7 +308,7 @@ function weak_pin(string $pin): bool
 
 /**
  * Check the PIN before money leaves an account. Five wrong tries lock it for
- * 30 minutes and warn the customer by SMS.
+ * 30 minutes and warn the customer by email.
  */
 function check_pin(array $u, string $pin): void
 {
@@ -444,12 +444,12 @@ function badge(string $status): string
 /*  Notifications                                                      */
 /* ------------------------------------------------------------------ */
 
-/** In-app notification; with $sms the customer also gets it by text message. */
-function notify(int $userId, string $title, string $body = '', string $link = '', bool $sms = false): void
+/** In-app notification; with $email the customer also gets it by email (when email is set up). */
+function notify(int $userId, string $title, string $body = '', string $link = '', bool $email = false): void
 {
     q('INSERT INTO notifications (user_id, title, body, link) VALUES (?, ?, ?, ?)', [$userId, $title, $body, $link]);
-    if ($sms) {
-        sms_user($userId, preg_replace('/[^\p{L}\p{N}\p{P}\s₦]/u', '', $title), $body);   // emoji cost extra SMS pages
+    if ($email) {
+        message_user($userId, $title, $body, $link);
     }
 }
 
@@ -941,7 +941,8 @@ const COLLECTION_OUTCOMES = [
     'hardship'   => 'Hardship (illness, lost income)',
     'dispute'    => 'Disputes the amount',
     'visit'      => 'Visited in person',
-    'sms'        => 'Reminder SMS',
+    'email'      => 'Reminder email',
+    'sms'        => 'Reminder SMS (old)',
     'other'      => 'Other',
 ];
 
@@ -1135,17 +1136,40 @@ function absolute_url(string $path): string
     return (is_https() ? 'https://' : 'http://') . $host . url($path);
 }
 
+/** True when emails can be sent: a hosting mailbox (SMTP) or a Resend key is set up under Integrations. */
 function mail_enabled(): bool
 {
-    return resend_key() !== '';
+    return smtp_configured() || resend_key() !== '';
 }
 
-/** Send an email through Resend. Returns false if it could not be sent. */
+function smtp_configured(): bool
+{
+    return int_key('smtp_host') !== '' && int_key('smtp_user') !== '' && int_key('smtp_pass') !== '';
+}
+
+/** Why the last email failed, for the Integrations test (never shown to customers). */
+function mail_last_error(): string
+{
+    return (string)($GLOBALS['mail_last_error'] ?? '');
+}
+
+/** Send an email: through the hosting mailbox when set up, otherwise Resend. Returns false if it could not be sent. */
 function send_mail(string $to, string $subject, string $html): bool
 {
+    $GLOBALS['mail_last_error'] = '';
     if (!mail_enabled()) {
+        $GLOBALS['mail_last_error'] = 'No email service is set up.';
         return false;
     }
+    $ok = smtp_configured() ? smtp_send($to, $subject, $html) : resend_send($to, $subject, $html);
+    if (!$ok) {
+        error_log('[lucapetloan] email to ' . $to . ' failed: ' . mail_last_error());
+    }
+    return $ok;
+}
+
+function resend_send(string $to, string $subject, string $html): bool
+{
     $ctx = stream_context_create(['http' => [
         'method'        => 'POST',
         'header'        => "Authorization: Bearer " . resend_key() . "\r\nContent-Type: application/json\r\n",
@@ -1153,12 +1177,100 @@ function send_mail(string $to, string $subject, string $html): bool
         'timeout'       => 10,
         'ignore_errors' => true,
     ]]);
-    $res = @file_get_contents('https://api.resend.com/emails', false, $ctx);
+    $res = @file_get_contents(RESEND_BASE_URL . '/emails', false, $ctx);
     $ok = $res !== false && preg_match('#^HTTP/\S+ 2\d\d#', $http_response_header[0] ?? '');
     if (!$ok) {
-        error_log('[lucapetloan] email to ' . $to . ' failed: ' . ($http_response_header[0] ?? 'no response') . ' ' . substr((string)$res, 0, 300));
+        $msg = is_string($res) ? (json_decode($res, true)['message'] ?? '') : '';
+        $GLOBALS['mail_last_error'] = 'Resend: ' . ($http_response_header[0] ?? 'no response') . ($msg ? ' · ' . $msg : '');
     }
     return (bool)$ok;
+}
+
+/** "LucaPet Loan <no-reply@x.com>" → ['LucaPet Loan', 'no-reply@x.com'] */
+function mail_from_parts(): array
+{
+    $from = mail_from();
+    if (preg_match('/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/', $from, $m)) {
+        return [trim($m[1]) ?: APP_NAME, trim($m[2])];
+    }
+    return [APP_NAME, trim($from)];
+}
+
+/**
+ * Minimal SMTP client (AUTH LOGIN) for a cPanel or other hosting mailbox.
+ * Port 465 uses SSL from the start, 587 upgrades with STARTTLS, others are plain (local tests).
+ */
+function smtp_send(string $to, string $subject, string $html): bool
+{
+    $host = int_key('smtp_host');
+    $port = (int)(int_key('smtp_port') ?: 465);
+    $secure = $port === 465 ? 'ssl' : ($port === 587 ? 'tls' : 'none');
+    [$fromName, $fromAddr] = mail_from_parts();
+    $fail = function (string $why) use (&$fp): bool {
+        $GLOBALS['mail_last_error'] = 'SMTP: ' . $why;
+        if (is_resource($fp)) {
+            @fwrite($fp, "QUIT\r\n");
+            fclose($fp);
+        }
+        return false;
+    };
+    $local = in_array(strtolower($host), ['localhost', '127.0.0.1'], true);
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => !$local, 'verify_peer_name' => !$local, 'SNI_enabled' => true, 'peer_name' => $host]]);
+    $fp = @stream_socket_client(($secure === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) {
+        return $fail('cannot connect to ' . $host . ':' . $port . ' (' . ($errstr ?: 'error ' . $errno) . ')');
+    }
+    stream_set_timeout($fp, 15);
+    $read = function () use ($fp): string {
+        $all = '';
+        while (($line = fgets($fp, 1024)) !== false) {
+            $all .= $line;
+            if (strlen($line) < 4 || $line[3] === ' ') {
+                break;
+            }
+        }
+        return $all;
+    };
+    $cmd = function (string $line, array $want) use ($fp, $read): ?string {
+        if ($line !== '') {
+            fwrite($fp, $line . "\r\n");
+        }
+        $reply = $read();
+        return in_array((int)substr($reply, 0, 3), $want, true) ? null : trim($reply ?: 'no reply');
+    };
+    $ehlo = 'EHLO ' . (parse_url(absolute_url(''), PHP_URL_HOST) ?: 'localhost');
+    if ($e = $cmd('', [220])) return $fail('greeting: ' . $e);
+    if ($e = $cmd($ehlo, [250])) return $fail('EHLO: ' . $e);
+    if ($secure === 'tls') {
+        if ($e = $cmd('STARTTLS', [220])) return $fail('STARTTLS: ' . $e);
+        if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) return $fail('TLS handshake failed');
+        if ($e = $cmd($ehlo, [250])) return $fail('EHLO: ' . $e);
+    }
+    if ($e = $cmd('AUTH LOGIN', [334])) return $fail('AUTH: ' . $e);
+    if ($e = $cmd(base64_encode(int_key('smtp_user')), [334])) return $fail('username: ' . $e);
+    if ($e = $cmd(base64_encode(int_key('smtp_pass')), [235])) return $fail('the mailbox password was refused (' . $e . ')');
+    if ($e = $cmd('MAIL FROM:<' . $fromAddr . '>', [250])) return $fail('sender refused: ' . $e);
+    if ($e = $cmd('RCPT TO:<' . $to . '>', [250, 251])) return $fail('recipient refused: ' . $e);
+    if ($e = $cmd('DATA', [354])) return $fail('DATA: ' . $e);
+    $boundary = 'lpl' . bin2hex(random_bytes(8));
+    $text = trim(html_entity_decode(strip_tags(preg_replace('#<(br|/p|/h1|/tr)[^>]*>#i', "\n", $html)), ENT_QUOTES, 'UTF-8'));
+    $enc = fn(string $s) => '=?UTF-8?B?' . base64_encode($s) . '?=';
+    $domain = substr(strrchr($fromAddr, '@') ?: '@localhost', 1);
+    $msg = 'Date: ' . date('r') . "\r\n"
+        . 'From: ' . $enc($fromName) . ' <' . $fromAddr . ">\r\n"
+        . 'To: <' . $to . ">\r\n"
+        . 'Subject: ' . $enc($subject) . "\r\n"
+        . 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $domain . ">\r\n"
+        . "MIME-Version: 1.0\r\n"
+        . 'Content-Type: multipart/alternative; boundary="' . $boundary . "\"\r\n\r\n"
+        . '--' . $boundary . "\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text)) . "\r\n"
+        . '--' . $boundary . "\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html)) . "\r\n"
+        . '--' . $boundary . "--\r\n";
+    fwrite($fp, $msg . ".\r\n");   // base64 lines never start with ".", so no dot-stuffing is needed
+    if ($e = $cmd('', [250])) return $fail('message refused: ' . $e);
+    fwrite($fp, "QUIT\r\n");
+    fclose($fp);
+    return true;
 }
 
 /* ------------------------------------------------------------------ */

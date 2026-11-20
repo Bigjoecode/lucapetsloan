@@ -1,5 +1,5 @@
 <?php
-/* API keys and test/live switches for Flutterwave, NOWPayments, Termii, Prembly and Resend (super admin only). */
+/* API keys and test/live switches for Flutterwave, NOWPayments, Prembly and email (super admin only). */
 require __DIR__ . '/../includes/bootstrap.php';
 $me = require_super();
 
@@ -19,9 +19,15 @@ const INT_FORMS = [
         'np_email'      => ['Account email', false, '/@/'],
         'np_password'   => ['Account password', true, '/^.{6,}$/'],
     ],
-    'termii' => ['termii_api_key' => ['API key', true, '/^.{10,}$/'], 'termii_sender_id' => ['Sender ID', false, '/^[A-Za-z0-9 ]{3,11}$/']],
     'prembly' => ['prembly_app_id' => ['App ID (optional)', false, '/^.{4,}$/'], 'prembly_secret_key' => ['Secret key (x-api-key)', true, '/^.{10,}$/']],
-    'email'  => ['resend_api_key' => ['Resend API key', true, '/^re_/'], 'mail_from' => ['Send from', false, '/@/']],
+    'email'  => [
+        'smtp_host'      => ['Outgoing server (SMTP)', false, '/^[A-Za-z0-9.-]{3,}$/'],
+        'smtp_port'      => ['Port', false, '/^\d{2,5}$/'],
+        'smtp_user'      => ['Mailbox (username)', false, '/^.{3,}$/'],
+        'smtp_pass'      => ['Mailbox password', true, '/^.{4,}$/'],
+        'mail_from'      => ['Send from (optional)', false, '/@/'],
+        'resend_api_key' => ['Resend API key', true, '/^re_/'],
+    ],
 ];
 
 if (is_post()) {
@@ -138,10 +144,6 @@ function integration_test(string $service): string
             $bal = np_request('GET', '/sub-partner/balance/' . rawurlencode($sub));
             if (!$bal['ok']) return 'NOWPayments: wallets open, but balances are refused (' . np_last_error() . ').' . $ipHint;
             return 'NOWPayments (' . np_mode() . ') is working: ' . $coins . ' coins switched on, sign-in OK, customer wallets and balances OK' . ($ip !== '' ? ' (server address ' . $ip . ')' : '') . '.';
-        case 'termii':
-            if (termii_key() === '') return 'Termii: no API key saved yet.';
-            [$http, $b] = $get(TERMII_BASE_URL . '/get-balance?api_key=' . rawurlencode(termii_key()), ['Accept: application/json']);
-            return $http === 200 && isset($b['balance']) ? 'Termii is working. Balance: ' . ($b['currency'] ?? '') . ' ' . $b['balance'] . '.' : 'Termii: key rejected (HTTP ' . $http . ').';
         case 'prembly':
             if (!prembly_on()) return 'Prembly: no secret key saved yet.';
             // A lookup of an impossible number: a "not found" answer proves the key is accepted without costing a real check.
@@ -150,7 +152,10 @@ function integration_test(string $service): string
             return $ok ? 'Prembly is working' . (!empty($b['is_sandbox']) || str_starts_with((string)($b['verification']['reference'] ?? ''), 'SBX') ? ' (sandbox)' : '') . '. Response: ' . ($b['detail'] ?? $b['response_code']) . '.'
                 : 'Prembly: request refused · ' . ($b['detail'] ?? $b['message'] ?? 'HTTP ' . $http) . '. Check the key and the address below.';
         default:
-            return mail_enabled() ? 'Resend key saved. Try "Forgot password" with your own email to see a real message.' : 'Email: no Resend key saved yet.';
+            if (!mail_enabled()) return 'Email: add your mailbox details (or a Resend key) first.';
+            $to = (string)$GLOBALS['me']['email'];
+            $ok = send_mail($to, 'Test email · ' . APP_NAME, email_html('Email is working 🎉', "This is a test from " . APP_NAME . ".\n\nCustomers will now get their approvals, payments, reminders and password resets by email.", absolute_url('dashboard.php'), 'Open ' . APP_NAME));
+            return $ok ? 'Test email sent to ' . $to . ' via ' . (smtp_configured() ? 'your mailbox (' . int_key('smtp_host') . ')' : 'Resend') . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
     }
 }
 
@@ -211,14 +216,6 @@ app_header('Integrations', 'integrations', 'admin');
 </div>
 
 <div class="grid grid-2" style="align-items:start">
-  <div class="card" id="termii">
-    <h2>SMS · Termii</h2>
-    <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="termii">
-      <?php foreach (INT_FORMS['termii'] as $n => $spec) $field($n, $spec); ?>
-      <?= $pw ?>
-      <div class="row"><button class="btn btn-primary">Save Termii</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Test connection</button></div>
-    </form>
-  </div>
   <div class="card" id="prembly">
     <h2>BVN &amp; NIN checks · Prembly</h2>
     <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="prembly">
@@ -237,12 +234,22 @@ app_header('Integrations', 'integrations', 'admin');
     </form>
   </div>
   <div class="card" id="email">
-    <h2>Email · Resend</h2>
+    <div class="card-head"><h2>Email</h2><?= mail_enabled() ? '<span class="badge badge-ok">Connected · ' . (smtp_configured() ? 'mailbox' : 'Resend') . '</span>' : '<span class="badge badge-warn">Not set up</span>' ?></div>
     <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="service" value="email">
-      <?php foreach (INT_FORMS['email'] as $n => $spec) $field($n, $spec); ?>
-      <p class="small muted" style="margin:0">"Send from" looks like <code><?= e(APP_NAME) ?> &lt;no-reply@yourdomain.com&gt;</code> on a domain verified in Resend.</p>
+      <p class="small muted" style="margin:0"><strong>Easiest: use a mailbox on your hosting.</strong> In cPanel → <em>Email Accounts</em> create e.g. <code>no-reply@<?= e(parse_url(absolute_url(''), PHP_URL_HOST) ?: 'yourdomain.com') ?></code>, then open <em>Connect Devices</em> next to it and copy the <strong>Outgoing server</strong> and <strong>SMTP port</strong> (465) from "Secure SSL/TLS settings".</p>
+      <div class="form-grid">
+        <?php foreach (['smtp_host', 'smtp_port'] as $n) $field($n, INT_FORMS['email'][$n]); ?>
+      </div>
+      <div class="form-grid">
+        <?php foreach (['smtp_user', 'smtp_pass'] as $n) $field($n, INT_FORMS['email'][$n]); ?>
+      </div>
+      <?php $field('mail_from', INT_FORMS['email']['mail_from']); ?>
+      <p class="small muted" style="margin:0">Leave "Send from" blank to use the mailbox address, or write it like <code><?= e(APP_NAME) ?> &lt;no-reply@yourdomain.com&gt;</code> (same address as the mailbox).</p>
+      <details><summary class="small">Or use Resend instead of a mailbox</summary>
+        <div class="form" style="margin-top:.6rem"><?php $field('resend_api_key', INT_FORMS['email']['resend_api_key']); ?><p class="small muted" style="margin:0">Only used when no mailbox is filled in. Needs your domain verified in Resend.</p></div>
+      </details>
       <?= $pw ?>
-      <div class="row"><button class="btn btn-primary">Save email</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Check</button></div>
+      <div class="row"><button class="btn btn-primary">Save email</button><button class="btn btn-ghost" name="action" value="test" formnovalidate>Send test email to me</button></div>
     </form>
   </div>
 </div>

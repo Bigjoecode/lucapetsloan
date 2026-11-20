@@ -75,8 +75,8 @@ const SETTING_DEFAULTS = [
     'auto_payout_daily_limit' => 50000, // per customer per day; above it (or 0 = no limit) staff approve
     'auto_approve_repeat'  => 1,        // approve loans instantly for customers with an on-time repayment record
     'auto_disburse'        => 1,        // pay instantly approved loans straight to the customer's bank
-    'sms_enabled'          => 1,        // send important alerts and reminders by SMS (Termii key under Integrations)
-    'savings_sms_reminders'=> 0,        // daily SMS nudge when a plan hasn't been paid that day (costs per SMS)
+    'email_alerts'         => 1,        // email important alerts and reminders (email set up under Integrations)
+    'savings_email_reminders' => 0,     // daily email nudge when a plan hasn't been paid that day
     // Borrowing limit by credit level; savings add up to the same amount again.
     'limit_starter'        => 20000,
     'limit_bronze'         => 50000,
@@ -109,14 +109,12 @@ define('DAYS_PER_MONTH', 30);                   // interest month length
 // The base URLs below are only overridden for local testing.
 define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3'), '/'));
 
-// SMS through Termii (termii.com). The sender ID must be approved by Termii;
-// the "dnd" channel also reaches numbers on Do-Not-Disturb but needs that approval too.
 // NOWPayments (crypto savings). NP_BASE_URL overrides both addresses (local tests only).
 define('NP_LIVE_URL', 'https://api.nowpayments.io/v1');
 define('NP_SANDBOX_URL', 'https://api-sandbox.nowpayments.io/v1');
 
-define('TERMII_CHANNEL', env('TERMII_CHANNEL', 'generic'));
-define('TERMII_BASE_URL', rtrim(env('TERMII_BASE_URL', 'https://api.ng.termii.com/api'), '/'));
+// Email through Resend, if used instead of a hosting mailbox (RESEND_BASE_URL is for local tests only).
+define('RESEND_BASE_URL', rtrim(env('RESEND_BASE_URL', 'https://api.resend.com'), '/'));
 
 // BVN and NIN checks go through Prembly; keys and endpoints are under Integrations.
 

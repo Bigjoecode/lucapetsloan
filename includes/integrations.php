@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /*
- * API keys for Flutterwave, NOWPayments, Termii, Prembly and Resend. A super admin manages
+ * API keys for Flutterwave, NOWPayments, Prembly and email (hosting mailbox or Resend). A super admin manages
  * them under Integrations; they're stored encrypted in the settings table.
  * Environment variables still work as a fallback for older setups.
  */
@@ -11,9 +11,10 @@ declare(strict_types=1);
 const INTEGRATION_KEYS = [
     'flw_test_public' => 'FLW_PUBLIC_KEY',  'flw_test_secret' => 'FLW_SECRET_KEY', 'flw_test_hash' => 'FLW_SECRET_HASH',
     'flw_live_public' => 'FLW_PUBLIC_KEY',  'flw_live_secret' => 'FLW_SECRET_KEY', 'flw_live_hash' => 'FLW_SECRET_HASH',
-    'termii_api_key'  => 'TERMII_API_KEY',  'termii_sender_id' => 'TERMII_SENDER_ID',
     'prembly_app_id'  => 'PREMBLY_APP_ID',  'prembly_secret_key' => 'PREMBLY_SECRET_KEY',
     'resend_api_key'  => 'RESEND_API_KEY',  'mail_from' => 'MAIL_FROM',
+    'smtp_host'       => 'SMTP_HOST',       'smtp_port' => 'SMTP_PORT',
+    'smtp_user'       => 'SMTP_USER',       'smtp_pass' => 'SMTP_PASS',
     'np_api_key'      => 'NP_API_KEY',      'np_ipn_secret' => 'NP_IPN_SECRET',
     'np_email'        => 'NP_EMAIL',        'np_password' => 'NP_PASSWORD',
 ];
@@ -100,16 +101,6 @@ function flw_hash(): string
     return int_key('flw_' . flw_mode() . '_hash');
 }
 
-function termii_key(): string
-{
-    return int_key('termii_api_key');
-}
-
-function termii_sender(): string
-{
-    return int_key('termii_sender_id') ?: 'LucaPet';
-}
-
 function resend_key(): string
 {
     return int_key('resend_api_key');
@@ -117,5 +108,8 @@ function resend_key(): string
 
 function mail_from(): string
 {
-    return int_key('mail_from') ?: APP_NAME . ' <onboarding@resend.dev>';
+    if (int_key('mail_from') !== '') {
+        return int_key('mail_from');
+    }
+    return APP_NAME . ' <' . (smtp_configured() && str_contains(int_key('smtp_user'), '@') ? int_key('smtp_user') : 'onboarding@resend.dev') . '>';
 }
