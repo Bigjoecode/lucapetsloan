@@ -6,7 +6,7 @@ $rows = q('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 
 q('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0', [$u['id']]);
 
 $area = (is_staff($u) && !empty($_SERVER['HTTP_REFERER']) && str_contains($_SERVER['HTTP_REFERER'], '/admin/')) ? 'admin' : 'app';
-app_header('Notifications', '', $area);
+app_header('Notifications', 'notifications', $area);
 ?>
 <h1 class="mobile-title">Notifications</h1>
 <div class="card">

@@ -29,6 +29,14 @@ function icon(string $name, int $size = 20): string
         'doc'     => '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
         'calendar'=> '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
         'fire'    => '<path d="M12 22c4 0 7-2.7 7-7 0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8 0 4.3 3 7 7 7Z"/>',
+        'sun'     => '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+        'moon'    => '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+        'eye'     => '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+        'headset' => '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2" y="14" width="5" height="7" rx="2"/><rect x="17" y="14" width="5" height="7" rx="2"/>',
+        'wallet'  => '<path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6"/><circle cx="16.5" cy="13.5" r="1.2" fill="currentColor"/>',
+        'coin'    => '<circle cx="12" cy="12" r="9"/><path d="M9.5 8h4a2 2 0 0 1 0 4h-4V8Zm0 4h4.5a2 2 0 0 1 0 4H9.5v-8M11 6.5V8M11 16v1.5"/>',
+        'send'    => '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/>',
+        'bank'    => '<path d="M3 10 12 4l9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18"/>',
     ];
     $p = $paths[$name] ?? '';
     return '<svg class="ic" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $p . '</svg>';
@@ -99,14 +107,16 @@ function render_flashes(): string
     return $html;
 }
 
-function html_head(string $title, array $extraCss = []): void
+function html_head(string $title, array $extraCss = [], ?string $theme = null): void
 {
     ?><!doctype html>
-<html lang="en" data-currency="<?= e(CURRENCY) ?>" data-base="<?= e(BASE_URL) ?>">
+<html lang="en" data-currency="<?= e(CURRENCY) ?>" data-base="<?= e(BASE_URL) ?>"<?= $theme ? ' data-theme="' . e($theme) . '"' : '' ?>>
 <head>
+<?php if ($theme): ?><script>try { var t = localStorage.getItem('lpl-theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; if (localStorage.getItem('lpl-hide') === '1') document.documentElement.classList.add('amounts-hidden'); } catch (e) {}</script>
+<?php endif; ?>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b4f3c">
+<meta name="theme-color" content="<?= $theme === 'dark' ? '#08120e' : '#0b4f3c' ?>">
 <link rel="manifest" href="<?= url('manifest.php') ?>">
 <link rel="icon" type="image/png" sizes="192x192" href="<?= url('assets/icons/icon-192.png') ?>">
 <link rel="apple-touch-icon" href="<?= url('assets/icons/apple-touch-icon.png') ?>">
@@ -116,7 +126,7 @@ function html_head(string $title, array $extraCss = []): void
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=5">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=6">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>
@@ -156,26 +166,26 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=7"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=8"></script>
 </body>
 </html>
 <?php
 }
 
-/** Signed-in app shell for customers ($area = 'app') or staff ($area = 'admin'). */
-function app_header(string $title, string $active = '', string $area = 'app'): void
+/** Signed-in app shell for customers ($area = 'app', dark by default) or staff ($area = 'admin', light by default). */
+function app_header(string $title, string $active = '', string $area = 'app', string $subtitle = ''): void
 {
     $u = current_user();
-    html_head($title);
+    html_head($title, [], $area === 'admin' ? 'light' : 'dark');
     if ($area === 'admin') {
-        $nav = array_filter([
+        $groups = [(is_super($u) ? 'Super admin' : 'Staff console') => array_filter([
             'dashboard' => ['admin/index.php', 'Overview', 'chart'],
             'kyc'       => can('kyc') ? ['admin/kyc.php', 'Verifications', 'shield'] : null,
             'loans'     => can('loans') || can('waivers') || can('collections') ? ['admin/loans.php', 'Loans', 'loan'] : null,
             'collections' => can('collections') ? ['admin/collections.php', 'Collections', 'phone'] : null,
             'visits'    => can('visits') ? ['admin/visits.php', 'Home visits', 'map'] : null,
             'payments'  => can('payments') ? ['admin/payments.php', 'Payments', 'cash'] : null,
-            'crypto'    => can('payments') ? ['admin/crypto.php', 'Crypto', 'cash'] : null,
+            'crypto'    => can('payments') ? ['admin/crypto.php', 'Crypto', 'coin'] : null,
             'users'     => can('customers') ? ['admin/users.php', 'Customers', 'users'] : null,
             'products'  => can('products') ? ['admin/products.php', 'Loan products', 'cog'] : null,
             'reports'   => can('reports') ? ['admin/reports.php', 'Reports', 'chart'] : null,
@@ -184,52 +194,71 @@ function app_header(string $title, string $active = '', string $area = 'app'): v
             'settings'  => is_super($u) ? ['admin/settings.php', 'Settings', 'cog'] : null,
             'integrations' => is_super($u) ? ['admin/integrations.php', 'Integrations', 'shield'] : null,
             'audit'     => is_super($u) ? ['admin/audit.php', 'Audit log', 'list'] : null,
-        ]);
+        ])];
+        $nav = $groups[array_key_first($groups)];
         $mobile = array_slice(array_keys($nav), 0, 5);
     } else {
-        $nav = [
-            'dashboard'    => ['dashboard.php', 'Home', 'home'],
-            'savings'      => ['savings.php', 'Savings', 'piggy'],
-            'crypto'       => ['crypto.php', 'Crypto savings', 'cash'],
-            'loans'        => ['loans.php', 'Loans', 'loan'],
-            'ajo'          => ['ajo.php', 'Group savings', 'users'],
-            'verification' => ['verification.php', 'Verification', 'shield'],
-            'transactions' => ['transactions.php', 'Activity', 'list'],
-            'profile'      => ['profile.php', 'Profile', 'user'],
+        $groups = [
+            'Main' => [
+                'dashboard'    => ['dashboard.php', 'Dashboard', 'home'],
+                'transactions' => ['transactions.php', 'Transactions', 'chart'],
+            ],
+            'Save' => array_filter([
+                'savings' => ['savings.php', 'Savings', 'piggy'],
+                'crypto'  => crypto_on() ? ['crypto.php', 'Crypto savings', 'coin'] : null,
+                'ajo'     => ['ajo.php', 'Group savings', 'users'],
+            ]),
+            'Borrow' => [
+                'loans'        => ['loans.php', 'Loans', 'loan'],
+                'verification' => ['verification.php', 'Verification', 'shield'],
+            ],
+            'Account' => [
+                'notifications' => ['notifications.php', 'Notifications', 'bell'],
+                'profile'       => ['profile.php', 'Settings', 'cog'],
+            ],
         ];
+        $nav = array_merge(...array_values($groups));
+        $nav['transactions'][1] = 'Activity';   // shorter label for the phone bar
+        $nav['dashboard'][1] = 'Home';
         $mobile = ['dashboard', 'savings', 'loans', 'verification', 'transactions'];
     }
     $unread = unread_count((int)$u['id']);
+    $home = url($area === 'admin' ? 'admin/index.php' : 'dashboard.php');
+    $first = explode(' ', trim($u['full_name']))[0];
     ?>
 <body class="app area-<?= e($area) ?>">
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="<?= url($area === 'admin' ? 'admin/index.php' : 'dashboard.php') ?>"><?= brand_mark() ?></a>
-    <?php if ($area === 'admin'): ?><div class="side-label"><?= is_super($u) ? 'Super admin' : 'Staff console' ?></div><?php endif; ?>
+    <a class="brand" href="<?= $home ?>"><?= brand_mark() ?></a>
     <nav class="side-nav">
-      <?php foreach ($nav as $key => [$href, $text, $ic]): ?>
-        <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic) ?><span><?= e($text) ?></span></a>
+      <?php foreach ($groups as $label => $items): if (!$items) continue; ?>
+        <div class="side-label"><?= e($label) ?></div>
+        <?php foreach ($items as $key => [$href, $text, $ic]): ?>
+          <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><span class="nav-ic"><?= icon($ic, 18) ?></span><span class="grow"><?= e($text) ?></span><?php if ($key === 'notifications' && $unread): ?><span class="nav-count"><?= $unread > 9 ? '9+' : $unread ?></span><?php endif; ?></a>
+        <?php endforeach; ?>
       <?php endforeach; ?>
-    </nav>
-    <div class="side-foot">
-      <?php if (is_staff($u) && $area === 'admin'): ?>
-        <a href="<?= url('admin/security.php') ?>"><?= icon('shield') ?><span>Sign-in security</span></a>
-      <?php endif; ?>
       <?php if (is_staff($u)): ?>
-        <a href="<?= url($area === 'admin' ? 'dashboard.php' : 'admin/index.php') ?>" class="side-switch"><?= icon('arrow', 16) ?><?= $area === 'admin' ? 'Customer view' : 'Staff console' ?></a>
+        <div class="side-label">Switch</div>
+        <?php if ($area === 'admin'): ?><a href="<?= url('admin/security.php') ?>"><span class="nav-ic"><?= icon('shield', 18) ?></span><span class="grow">Sign-in security</span></a><?php endif; ?>
+        <a href="<?= url($area === 'admin' ? 'dashboard.php' : 'admin/index.php') ?>"><span class="nav-ic"><?= icon('arrow', 18) ?></span><span class="grow"><?= $area === 'admin' ? 'Customer view' : 'Staff console' ?></span></a>
       <?php endif; ?>
-      <a href="<?= url('logout.php') ?>"><?= icon('logout') ?><span>Sign out</span></a>
+    </nav>
+    <div class="side-user">
+      <a class="avatar" href="<?= url('profile.php') ?>"><?= e(initials($u['full_name'])) ?><i class="online"></i></a>
+      <div class="who"><strong><?= e($first) ?></strong><span><?= e($u['email']) ?></span></div>
+      <a class="side-out" href="<?= url('logout.php') ?>" title="Sign out" aria-label="Sign out"><?= icon('logout', 18) ?></a>
     </div>
   </aside>
 
   <div class="main">
     <header class="topbar">
-      <a class="brand brand-mobile" href="<?= url($area === 'admin' ? 'admin/index.php' : 'dashboard.php') ?>"><?= brand_mark() ?></a>
-      <h1 class="page-title"><?= e($title) ?></h1>
+      <a class="brand brand-mobile" href="<?= $home ?>"><?= brand_mark() ?></a>
+      <div class="page-title"><h1><?= e($title) ?></h1><?php if ($subtitle !== ''): ?><span><?= e($subtitle) ?></span><?php endif; ?></div>
       <div class="top-actions">
         <button type="button" class="btn btn-accent btn-sm" data-install hidden><?= icon('down', 16) ?> Install app</button>
+        <button type="button" class="icon-btn theme-btn" data-theme-toggle aria-label="Switch between light and dark"><span class="when-dark"><?= icon('sun') ?></span><span class="when-light"><?= icon('moon') ?></span></button>
         <a class="icon-btn" href="<?= url('notifications.php') ?>" aria-label="Notifications"><?= icon('bell') ?><?php if ($unread): ?><span class="dot"><?= $unread > 9 ? '9+' : $unread ?></span><?php endif; ?></a>
-        <a class="avatar" href="<?= url('profile.php') ?>" title="<?= e($u['full_name']) ?>"><?= e(initials($u['full_name'])) ?></a>
+        <a class="me" href="<?= url('profile.php') ?>" title="<?= e($u['full_name']) ?>"><span class="avatar"><?= e(initials($u['full_name'])) ?></span><span class="who"><strong><?= e($first) ?></strong><span><?= e($u['email']) ?></span></span></a>
       </div>
     </header>
     <main class="content">
@@ -252,7 +281,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=7"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=8"></script>
 </body>
 </html>
 <?php

@@ -15,6 +15,26 @@
       d.showModal();
     })
   );
+  // Light / dark switch, remembered on this device.
+  const root = document.documentElement;
+  const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
+  document.querySelectorAll('[data-theme-toggle]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      store('lpl-theme', next);
+      const meta = document.querySelector('meta[name=theme-color]');
+      if (meta) meta.content = next === 'dark' ? '#08120e' : '#0b4f3c';
+    })
+  );
+  // Eye button: hide or show money amounts (for when someone is looking over your shoulder).
+  document.querySelectorAll('[data-hide-amounts]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const hidden = root.classList.toggle('amounts-hidden');
+      store('lpl-hide', hidden ? '1' : '0');
+    })
+  );
+
   // Copy buttons: <button data-copy="text"> copies the text and says so for a moment.
   document.querySelectorAll('[data-copy]').forEach((b) =>
     b.addEventListener('click', () => {
