@@ -109,14 +109,19 @@ function site_domain(): string
     return str_starts_with($h, 'www.') ? substr($h, 4) : $h;
 }
 
+/** Ports that send mail. 993/995 are for reading mail (IMAP/POP3), so they never apply here. */
+const SMTP_PORTS = [465, 587, 25, 2525];
+
 function smtp_host(): string
 {
-    return int_key('smtp_host') ?: site_domain();
+    $h = int_key('smtp_host');
+    return preg_match('/[a-z]/i', $h) ? $h : site_domain();   // a saved number (e.g. a port typed in the wrong box) is ignored
 }
 
 function smtp_port(): int
 {
-    return (int)(int_key('smtp_port') ?: 465);
+    $p = (int)int_key('smtp_port');
+    return in_array($p, SMTP_PORTS, true) ? $p : 465;
 }
 
 function smtp_user(): string

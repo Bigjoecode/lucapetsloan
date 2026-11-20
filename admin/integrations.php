@@ -21,8 +21,8 @@ const INT_FORMS = [
     ],
     'prembly' => ['prembly_app_id' => ['App ID (optional)', false, '/^.{4,}$/'], 'prembly_secret_key' => ['Secret key (x-api-key)', true, '/^.{10,}$/']],
     'email'  => [
-        'smtp_host'      => ['Outgoing server (SMTP)', false, '/^[A-Za-z0-9.-]{3,}$/'],
-        'smtp_port'      => ['Port', false, '/^\d{2,5}$/'],
+        'smtp_host'      => ['Outgoing server (SMTP)', false, '/^(?=.*[A-Za-z])[A-Za-z0-9.-]{3,}$/'],
+        'smtp_port'      => ['Port', false, '/^(465|587|25|2525)$/'],
         'smtp_user'      => ['Mailbox (username)', false, '/^.{3,}$/'],
         'smtp_pass'      => ['Mailbox password', true, '/^.{4,}$/'],
         'mail_from'      => ['Send from (optional)', false, '/@/'],
