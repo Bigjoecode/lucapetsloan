@@ -115,7 +115,8 @@ const SMTP_PORTS = [465, 587, 25, 2525];
 function smtp_host(): string
 {
     $h = int_key('smtp_host');
-    return preg_match('/[a-z]/i', $h) ? $h : site_domain();   // a saved number (e.g. a port typed in the wrong box) is ignored
+    // A bare number (e.g. a port typed in the wrong box) is ignored; host names and IP addresses are kept.
+    return preg_match('/[a-z]/i', $h) || filter_var($h, FILTER_VALIDATE_IP) ? $h : site_domain();
 }
 
 function smtp_port(): int
