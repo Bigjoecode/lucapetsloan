@@ -1248,7 +1248,7 @@ function smtp_send(string $to, string $subject, string $html): bool
     }
     if ($e = $cmd('AUTH LOGIN', [334])) return $fail('AUTH: ' . $e);
     if ($e = $cmd(base64_encode(smtp_user()), [334])) return $fail('username: ' . $e);
-    if ($e = $cmd(base64_encode(int_key('smtp_pass')), [235])) return $fail('the mailbox password was refused (' . $e . ')');
+    if ($e = $cmd(base64_encode(int_key('smtp_pass')), [235])) return $fail('the mailbox password was refused for ' . smtp_user() . ' (' . $e . ')');
     if ($e = $cmd('MAIL FROM:<' . $fromAddr . '>', [250])) return $fail('sender refused: ' . $e);
     if ($e = $cmd('RCPT TO:<' . $to . '>', [250, 251])) return $fail('recipient refused: ' . $e);
     if ($e = $cmd('DATA', [354])) return $fail('DATA: ' . $e);
