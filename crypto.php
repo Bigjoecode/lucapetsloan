@@ -33,10 +33,10 @@ if (is_post()) {
             crypto_sync($uid);
             $_SESSION['crypto_synced'] = time();
             unset($_SESSION['crypto_usd']);
-            flash('success', 'Up to date with NOWPayments.');
+            flash('success', 'Your crypto savings are up to date.');
         }
     } catch (UserError $e) {
-        flash('error', $e->getMessage());
+        flash('error', $e->getMessage() . (is_super($u) && np_last_error() !== '' ? ' [Admin: ' . np_last_error() . ']' : ''));
     }
     redirect($back);
 }
@@ -105,6 +105,8 @@ foreach ($balances as $code => [$amt]) {
     $totalUsd += $amt * (coin_usd($code) ?? 0);
 }
 $ngn = $balances ? usd_to_ngn($totalUsd) : null;
+$btcPx = $on && $totalUsd > 0 ? coin_usd('btc') : null;
+$btcEq = $btcPx ? round($totalUsd / $btcPx, 8) : null;
 $statusText = ['waiting' => 'Waiting', 'confirming' => 'On the blockchain', 'confirmed' => 'Confirmed', 'sending' => 'Arriving', 'partially_paid' => 'Received',
     'finished' => 'Received', 'failed' => 'Failed', 'refunded' => 'Refunded', 'expired' => 'Expired'];
 $statusBadge = ['waiting' => 'muted', 'confirming' => 'info', 'confirmed' => 'info', 'sending' => 'info', 'partially_paid' => 'ok', 'finished' => 'ok', 'failed' => 'bad', 'refunded' => 'warn', 'expired' => 'muted',
@@ -164,13 +166,13 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
 
 <section class="acct crypto-hero">
   <div class="head">
-    <div class="bank"><span class="b-ic"><?= icon('coin', 22) ?></span><div><strong>Crypto savings</strong><span><?= np_mode() === 'sandbox' ? 'Test mode · not real coins' : 'Held for you by NOWPayments' ?></span></div></div>
+    <div class="bank"><span class="b-ic"><?= icon('coin', 22) ?></span><div><strong>Crypto savings</strong><span><?= np_mode() === 'sandbox' ? 'Test mode · not real coins' : 'Your digital dollar &amp; coin savings' ?></span></div></div>
     <?php if ($wallet !== ''): ?><button type="button" class="acno wallet-id" data-copy="<?= e($wallet) ?>" title="Copy wallet ID"><small>Wallet ID</small><b><?= e($wallet) ?></b></button><?php endif; ?>
   </div>
   <div class="mid" style="grid-template-columns:1fr auto">
     <div>
       <div class="lbl">Total value</div>
-      <div class="big"><span class="amt">$<?= number_format($totalUsd, 2) ?></span><button type="button" class="eye-btn" data-hide-amounts aria-label="Hide or show amounts"><?= icon('eye', 20) ?></button></div>
+      <div class="big"><span class="amt">$<?= number_format($totalUsd, 2) ?></span><?php if ($btcEq !== null): ?><span class="eq amt">≈ <?= e(coin_amount($btcEq)) ?> BTC</span><?php endif; ?><button type="button" class="eye-btn" data-hide-amounts aria-label="Hide or show amounts"><?= icon('eye', 20) ?></button></div>
       <div class="sub amt"><?= $ngn !== null ? '≈ ' . money0($ngn) . ' · ' : '' ?><?= count($balances) ?> coin<?= count($balances) === 1 ? '' : 's' ?> · no interest is paid on crypto</div>
     </div>
   </div>
@@ -188,8 +190,8 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
   <?php foreach ($balances as $code => [$amt, $pend]): $px = coin_usd($code); $c = $coins[$code] ?? null; ?>
     <div class="coin-card">
       <div class="row" style="gap:.7rem;flex-wrap:nowrap"><?= $coinBadge($code) ?><div style="min-width:0"><strong><?= e($c[0] ?? strtoupper($code)) ?></strong><div class="muted small"><?= e(strtoupper($code)) ?><?= $c && $c[1] ? ' · ' . e($c[1]) : '' ?></div></div></div>
-      <div class="coin-amt amt"><?= e(coin_amount($amt)) ?></div>
-      <div class="muted small amt"><?= $px !== null ? '≈ $' . number_format($amt * $px, 2) : '' ?><?= $pend > 0 ? ' · ' . e(coin_amount($pend)) . ' arriving' : '' ?></div>
+      <div class="coin-amt amt"><?= e(coin_amount($amt)) ?> <small><?= e(strtoupper(preg_replace('/(trc20|erc20|bsc|sol|matic|arb|op|base|ton)$/', '', $code) ?: $code)) ?></small><?php if ($px !== null): ?><span class="usd">$<?= number_format($amt * $px, 2) ?></span><?php endif; ?></div>
+      <div class="muted small amt"><?= $px !== null ? '1 ' . e(strtoupper($code)) . ' ≈ $' . e($px >= 1 ? number_format($px, 2) : coin_amount($px)) : '' ?><?= $pend > 0 ? ' · ' . e(coin_amount($pend)) . ' arriving' : '' ?></div>
       <div class="row" style="gap:.5rem;margin-top:.4rem">
         <a class="btn btn-ghost btn-sm" href="<?= url('crypto.php?coin=' . urlencode($code)) ?>#receive"><?= icon('down', 14) ?> Receive</a>
         <button type="button" class="btn btn-ghost btn-sm" data-open="dlg-cwithdraw" data-coin="<?= e($code) ?>"><?= icon('send', 14) ?> Send</button>

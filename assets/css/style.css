@@ -555,3 +555,9 @@ html[data-theme="dark"] .coin-card { background: linear-gradient(180deg, var(--s
   .receive-info { width: 100%; }
   .crypto-hero .big { font-size: 1.9rem; }
 }
+
+/* Crypto equivalents next to dollar amounts */
+.crypto-hero .big .eq { font-size: 1rem; font-weight: 700; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .2); padding: .25rem .65rem; border-radius: 99px; letter-spacing: 0; }
+.coin-amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem; }
+.coin-amt small { font-size: .85rem; font-weight: 700; color: var(--muted); }
+.coin-amt .usd { margin-left: auto; font-size: 1rem; font-weight: 800; color: var(--brand-600); }

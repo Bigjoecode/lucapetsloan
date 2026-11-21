@@ -104,7 +104,7 @@ function np_jwt(): string
     }
     $res = np_request('POST', '/auth', ['email' => int_key('np_email'), 'password' => int_key('np_password')], 'none');
     if (!$res['ok'] || empty($res['body']['token'])) {
-        throw new UserError('Crypto savings are unavailable right now (NOWPayments sign-in failed).');
+        throw new UserError('Crypto savings are unavailable right now. Please try again shortly.');
     }
     $at = time();
     return $token = (string)$res['body']['token'];
@@ -298,17 +298,37 @@ function crypto_wallet_address(int $userId, string $coin): array
         }
     }
     $min = np_min_amount($coin);
-    $res = np_request('POST', '/sub-partner/payment', [
-        'currency'            => $coin,
-        'amount'              => $min > 0 ? $min : 1,
-        'sub_partner_id'      => np_wallet_id($userId),
-        'is_fixed_rate'       => false,
-        'is_fee_paid_by_user' => false,
-        'ipn_callback_url'    => absolute_url('np_webhook.php'),
-    ]);
-    $p = $res['body']['result'] ?? [];
+    $base = $min > 0 ? $min : 1;
+    $sub = np_wallet_id($userId);
+    // The minimum for customer deposits can be higher than /min-amount reports. Step the amount up until
+    // NOWPayments accepts it, and remember the step that worked for this coin so next time it's one call.
+    $saved = (float)(q_val('SELECT v FROM settings WHERE k = ?', ['cache_np_mult_' . $coin]) ?: 1);
+    $steps = array_values(array_unique(array_merge([$saved], array_filter([1, 1.5, 2.5, 4, 7, 12], fn($m) => $m > $saved)), SORT_REGULAR));
+    $res = ['ok' => false, 'body' => []];
+    $p = [];
+    foreach ($steps as $mult) {
+        $amount = round($base * $mult, 8);
+        $res = np_request('POST', '/sub-partner/payment', [
+            'currency'            => $coin,
+            'amount'              => $amount,
+            'sub_partner_id'      => $sub,
+            'is_fixed_rate'       => false,
+            'is_fee_paid_by_user' => false,
+            'ipn_callback_url'    => absolute_url('np_webhook.php'),
+        ]);
+        $p = $res['body']['result'] ?? [];
+        if ($res['ok'] && !empty($p['pay_address']) && !empty($p['payment_id'])) {
+            if ($mult != $saved) {
+                q('REPLACE INTO settings (k, v) VALUES (?, ?)', ['cache_np_mult_' . $coin, (string)$mult]);
+            }
+            break;
+        }
+        if (!preg_match('/less than minimal|minimal amount|too small/i', np_message($res, ''))) {
+            break;   // a different problem: stepping up won't help
+        }
+    }
     if (!$res['ok'] || empty($p['pay_address']) || empty($p['payment_id'])) {
-        throw new UserError('We could not create your ' . strtoupper($coin) . ' address: ' . np_message($res, 'please try again') . '.');
+        throw new UserError('We couldn\'t create your ' . strtoupper($coin) . ' address right now. Please try again shortly, or choose another coin.');
     }
     $expires = $p['expiration_estimate_date'] ?? $p['valid_until'] ?? null;
     $expires = is_string($expires) && strtotime($expires) ? date('Y-m-d H:i:s', strtotime($expires)) : date('Y-m-d H:i:s', time() + 7 * 86400);

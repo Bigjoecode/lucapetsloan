@@ -47,6 +47,7 @@ if (crypto_on() && !empty($u['np_sub_id'])) {
     }
 }
 $cryptoNgn = $cryptoUsd ? usd_to_ngn($cryptoUsd) : null;
+$cryptoBtc = $cryptoUsd && ($px = coin_usd('btc')) ? round($cryptoUsd / $px, 8) : null;
 $portfolio = $totalSavings + (float)($cryptoNgn ?? 0);
 
 $firstName = explode(' ', trim($u['full_name']))[0];
@@ -111,7 +112,7 @@ app_header('Dashboard', 'dashboard', 'app', 'Welcome back, ' . $firstName);
           <?php if ($cryptoUsd !== null): ?>
             <div class="lbl">Crypto savings</div>
             <div class="val amt">$<?= number_format($cryptoUsd, 2) ?></div>
-            <div class="sub amt"><?= $cryptoNgn ? '≈ ' . money0($cryptoNgn) : 'Held by NOWPayments' ?></div>
+            <div class="sub amt"><?= $cryptoNgn ? '≈ ' . money0($cryptoNgn) : 'Digital dollars &amp; coins' ?><?= $cryptoBtc ? ' · ' . e(coin_amount($cryptoBtc)) . ' BTC' : '' ?></div>
           <?php elseif ($loan && $loan['status'] === 'active'): ?>
             <div class="lbl">Loan to clear today</div>
             <div class="val amt"><?= money($snap['payoff']) ?></div>
