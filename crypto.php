@@ -201,6 +201,23 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
 </section>
 <?php endif; ?>
 
+<section class="market" id="market" data-src="<?= url('crypto_market.php') ?>" aria-label="Live crypto prices">
+  <?php if ($balances): ?>
+  <div class="card mk-value">
+    <div class="card-head"><h2><?= icon('chart', 18) ?> Your crypto value</h2><span class="live-pill"><i></i> Live</span></div>
+    <div class="mk-now"><span class="mk-big amt" data-mk="now">—</span><span class="mk-chg" data-mk="chg"></span></div>
+    <div class="muted small" style="margin-bottom:.6rem">Last 7 days, at today's holdings</div>
+    <div class="mk-chart" data-mk="chart" role="img" aria-label="Your crypto value over the last 7 days"><div class="mk-skel"></div></div>
+    <details class="mk-table"><summary class="small">Show as table</summary><div data-mk="table"></div></details>
+  </div>
+  <?php endif; ?>
+  <div class="card mk-list">
+    <div class="card-head"><h2><?= icon('coin', 18) ?> Live market</h2><span class="live-pill"><i></i> <span data-mk="time">Live</span></span></div>
+    <ul class="list" data-mk="coins"><li class="muted small">Loading prices…</li></ul>
+    <p class="small muted" style="margin:.6rem 0 0">Prices in US dollars · 24-hour change · 7-day trend · updates every minute.</p>
+  </div>
+</section>
+
 <div class="dash">
   <div class="col">
     <section class="card" id="receive">
@@ -295,6 +312,106 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
 </dialog>
 <?php endif; ?>
 
+<script>
+(function () {
+  var box = document.getElementById('market');
+  if (!box) return;
+  var $ = function (k) { return box.querySelector('[data-mk="' + k + '"]'); };
+  var usd = function (v) { return '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: v < 1 ? 6 : 2 }); };
+  var esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var arrow = function (pct) { return (pct >= 0 ? '▲ +' : '▼ ') + pct.toFixed(2) + '%'; };
+  var last = null;
+
+  function spark(values, up) {
+    if (!values || values.length < 2) return '';
+    var w = 96, h = 30, min = Math.min.apply(null, values), max = Math.max.apply(null, values), r = (max - min) || 1;
+    var pts = values.map(function (v, i) { return (i * w / (values.length - 1)).toFixed(1) + ',' + (h - 2 - (v - min) / r * (h - 4)).toFixed(1); }).join(' ');
+    return '<svg class="spark ' + (up ? 'up' : 'down') + '" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" aria-hidden="true"><polyline points="' + pts + '" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+
+  function renderCoins(coins) {
+    var ul = $('coins');
+    if (!coins.length) { ul.innerHTML = '<li class="muted small">Prices are unavailable right now.</li>'; return; }
+    ul.innerHTML = coins.map(function (c) {
+      var up = c.change >= 0;
+      return '<li class="mk-row"><span class="coin-badge" style="width:34px;height:34px"><b>' + esc(c.symbol.slice(0, 4)) + '</b></span>'
+        + '<div class="grow"><div class="title">' + esc(c.name) + (c.held > 0 ? ' <span class="badge badge-ok">You hold</span>' : '') + '</div><div class="sub">' + esc(c.symbol) + '</div></div>'
+        + spark(c.spark, up)
+        + '<div class="mk-px"><b>' + usd(c.price) + '</b><span class="mk-c ' + (up ? 'up' : 'down') + '">' + arrow(c.change) + '</span></div></li>';
+    }).join('');
+  }
+
+  function renderValue(pts, hours) {
+    var el = $('chart');
+    if (!el) return;
+    if (!pts || pts.length < 2) { el.innerHTML = '<p class="muted small" style="margin:1rem 0">The chart appears once prices load.</p>'; return; }
+    var now = pts[pts.length - 1], first = pts[0], diff = now - first, pct = first ? diff / first * 100 : 0, up = diff >= 0;
+    $('now').textContent = usd(now);
+    $('chg').className = 'mk-chg ' + (up ? 'up' : 'down');
+    $('chg').textContent = (up ? '▲ +' : '▼ −') + usd(Math.abs(diff)).slice(0) + ' (' + (up ? '+' : '') + pct.toFixed(2) + '%) this week';
+    var step = hours / (pts.length - 1), t0 = Date.now() - hours * 3600e3;
+    var when = function (i) { return new Date(t0 + i * step * 3600e3); };
+    var fmt = function (d) { return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); };
+
+    var W = Math.max(260, el.clientWidth), H = 190, L = 52, R = 8, T = 10, B = 24;
+    var min = Math.min.apply(null, pts), max = Math.max.apply(null, pts);
+    if (max - min < max * 0.002) { var pad = Math.max(max * 0.01, 0.01); min -= pad; max += pad; }
+    var X = function (i) { return L + i * (W - L - R) / (pts.length - 1); };
+    var Y = function (v) { return T + (max - v) / (max - min) * (H - T - B); };
+    var line = pts.map(function (v, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1); }).join(' ');
+    var area = line + ' L' + X(pts.length - 1).toFixed(1) + ' ' + (H - B) + ' L' + X(0).toFixed(1) + ' ' + (H - B) + ' Z';
+    var grid = '', ticks = [min, (min + max) / 2, max];
+    ticks.forEach(function (v) {
+      var y = Y(v).toFixed(1);
+      grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" class="mk-grid"/><text x="' + (L - 8) + '" y="' + y + '" class="mk-axis" text-anchor="end" dominant-baseline="middle">' + usd(v).replace(/\.\d+$/, '') + '</text>';
+    });
+    var days = '';
+    [0, 2, 4, 7].forEach(function (d) {
+      var i = Math.min(pts.length - 1, Math.round(d * 24 / step));
+      days += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" class="mk-axis" text-anchor="' + (d === 0 ? 'start' : d === 7 ? 'end' : 'middle') + '">' + (d === 7 ? 'Now' : when(i).toLocaleDateString(undefined, { weekday: 'short' })) + '</text>';
+    });
+    el.innerHTML = '<svg width="' + W + '" height="' + H + '" class="mk-svg ' + (up ? 'up' : 'down') + '">'
+      + '<defs><linearGradient id="mkfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="mk-stop1"/><stop offset="1" class="mk-stop2"/></linearGradient></defs>'
+      + grid + '<path d="' + area + '" fill="url(#mkfill)"/><path d="' + line + '" class="mk-line"/>' + days
+      + '<line class="mk-cross" y1="' + T + '" y2="' + (H - B) + '" style="display:none"/><circle class="mk-dot" r="5" style="display:none"/>'
+      + '<rect x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + H + '" fill="transparent" class="mk-hit"/></svg><div class="mk-tip" style="display:none"></div>';
+    var svg = el.querySelector('svg'), cross = svg.querySelector('.mk-cross'), dot = svg.querySelector('.mk-dot'), tip = el.querySelector('.mk-tip');
+    function show(evt) {
+      var r = svg.getBoundingClientRect(), cx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - r.left;
+      var i = Math.round((cx - L) / (W - L - R) * (pts.length - 1)); i = Math.max(0, Math.min(pts.length - 1, i));
+      var x = X(i), y = Y(pts[i]);
+      cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.style.display = '';
+      dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.style.display = '';
+      tip.innerHTML = '<b>' + usd(pts[i]) + '</b><span>' + fmt(when(i)) + '</span>';
+      tip.style.display = '';
+      tip.style.left = Math.min(Math.max(x - tip.offsetWidth / 2, 0), W - tip.offsetWidth) + 'px';
+      tip.style.top = Math.max(y - tip.offsetHeight - 12, 0) + 'px';
+    }
+    function hide() { cross.style.display = 'none'; dot.style.display = 'none'; tip.style.display = 'none'; }
+    var hit = svg.querySelector('.mk-hit');
+    hit.addEventListener('mousemove', show); hit.addEventListener('touchstart', show, { passive: true }); hit.addEventListener('touchmove', show, { passive: true });
+    hit.addEventListener('mouseleave', hide); hit.addEventListener('touchend', hide);
+    var rows = '';
+    for (var k = pts.length - 1; k >= 0; k -= 6) rows += '<tr><td>' + fmt(when(k)) + '</td><td class="num">' + usd(pts[k]) + '</td></tr>';
+    $('table').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Time</th><th class="num">Value</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function load() {
+    fetch(box.dataset.src, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        last = d;
+        renderCoins(d.coins || []);
+        renderValue(d.portfolio || [], d.hours || 168);
+        $('time').textContent = 'Live · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      })
+      .catch(function () { $('time').textContent = 'Reconnecting…'; });
+  }
+  load();
+  setInterval(function () { if (!document.hidden) load(); }, 60000);
+  var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (last) renderValue(last.portfolio || [], last.hours || 168); }, 200); });
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
   document.querySelectorAll('[data-qr]').forEach(function (el) {

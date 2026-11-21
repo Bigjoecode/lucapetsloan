@@ -212,6 +212,11 @@ function coin_label(string $code): string
 /** USD price of one coin (cached 10 minutes); null when unknown. */
 function coin_usd(string $code): ?float
 {
+    // The live market price first, so totals, coin cards and the chart always agree.
+    $id = coin_market_id($code);
+    if ($id !== '' && ($m = market_data([$id])) && isset($m[$id]) && $m[$id]['price'] > 0) {
+        return (float)$m[$id]['price'];
+    }
     if (in_array($code, ['usdttrc20', 'usdtbsc', 'usdterc20', 'usdt', 'usdc', 'usdcbsc', 'usdcsol', 'usdtsol', 'usdtmatic', 'usdcmatic', 'dai', 'busd', 'tusd'], true)) {
         return 1.0;
     }
@@ -479,4 +484,111 @@ function crypto_take_for_payout(int $wid, int $staffId): void
         throw new UserError('NOWPayments refused to move the coins: ' . np_message($res, 'HTTP ' . $res['http']) . '.');
     }
     q('UPDATE crypto_withdrawals SET status = "processing", writeoff_id = ?, staff_id = ? WHERE id = ?', [(string)$res['body']['result']['id'], $staffId, $wid]);
+}
+
+/* ---------- Live market (public prices from CoinGecko; no key, cached on the server) ---------- */
+
+/** CoinGecko id for a coin code; several networks of one coin share an id. '' when unknown. */
+function coin_market_id(string $code): string
+{
+    $code = strtolower($code);
+    $map = [
+        'btc' => 'bitcoin', 'eth' => 'ethereum', 'sol' => 'solana', 'trx' => 'tron', 'ltc' => 'litecoin', 'doge' => 'dogecoin',
+        'xrp' => 'ripple', 'ada' => 'cardano', 'ton' => 'the-open-network', 'dot' => 'polkadot', 'avax' => 'avalanche-2',
+        'bch' => 'bitcoin-cash', 'xlm' => 'stellar', 'link' => 'chainlink', 'shib' => 'shiba-inu', 'dai' => 'dai',
+        'matic' => 'matic-network', 'pol' => 'polygon-ecosystem-token', 'near' => 'near', 'atom' => 'cosmos', 'xmr' => 'monero',
+        'etc' => 'ethereum-classic', 'not' => 'notcoin', 'pepe' => 'pepe', 'arb' => 'arbitrum', 'op' => 'optimism',
+    ];
+    if (str_starts_with($code, 'usdt')) return 'tether';
+    if (str_starts_with($code, 'usdc')) return 'usd-coin';
+    if (str_starts_with($code, 'bnb')) return 'binancecoin';
+    if (isset($map[$code])) return $map[$code];
+    foreach (['trc20', 'erc20', 'bsc', 'sol', 'matic', 'arb', 'op', 'base', 'ton', 'mainnet'] as $net) {   // e.g. "shibbsc" → shib
+        if (str_ends_with($code, $net) && isset($map[substr($code, 0, -strlen($net))])) {
+            return $map[substr($code, 0, -strlen($net))];
+        }
+    }
+    return '';
+}
+
+/**
+ * Price, 24h change and 7-day hourly prices for coins, keyed by market id.
+ * One request for all coins, cached 2 minutes so every customer shares it.
+ */
+function market_data(array $ids): array
+{
+    $ids = array_values(array_unique(array_filter($ids)));
+    sort($ids);
+    if (!$ids) {
+        return [];
+    }
+    return np_cached('mkt_' . substr(md5(implode(',', $ids)), 0, 12), 120, function () use ($ids): array {
+        $ch = curl_init(MARKET_BASE_URL . '/coins/markets?vs_currency=usd&sparkline=true&price_change_percentage=24h&ids=' . rawurlencode(implode(',', $ids)));
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_HTTPHEADER => ['Accept: application/json'], CURLOPT_USERAGENT => APP_NAME . ' market widget']);
+        $raw = curl_exec($ch);
+        $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $rows = is_string($raw) ? json_decode($raw, true) : null;
+        if ($http !== 200 || !is_array($rows)) {
+            error_log('[lucapetloan] market data failed: HTTP ' . $http . ' ' . substr((string)$raw, 0, 200));
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            if (!is_array($r) || empty($r['id'])) continue;
+            $spark = array_map('floatval', (array)($r['sparkline_in_7d']['price'] ?? []));
+            // Keep every 2nd hourly point: 84 points draw the same week at half the size.
+            $spark = array_values(array_filter($spark, fn($k) => $k % 2 === 0, ARRAY_FILTER_USE_KEY));
+            $out[$r['id']] = [
+                'name'   => (string)($r['name'] ?? $r['id']),
+                'symbol' => strtoupper((string)($r['symbol'] ?? '')),
+                'price'  => (float)($r['current_price'] ?? 0),
+                'change' => round((float)($r['price_change_percentage_24h'] ?? 0), 2),
+                'spark'  => $spark,
+            ];
+        }
+        return $out;
+    });
+}
+
+/**
+ * What the live market panel needs for one customer: their coins first, then popular ones,
+ * plus their crypto value over the last 7 days (today's holdings at each hour's price).
+ */
+function crypto_market_view(array $balances): array
+{
+    $popular = ['btc', 'eth', 'usdttrc20', 'sol', 'bnbbsc', 'trx'];
+    $codes = array_values(array_unique(array_merge(array_keys($balances), $popular)));
+    $ids = [];
+    foreach ($codes as $c) {
+        if (($id = coin_market_id($c)) !== '') $ids[$c] = $id;
+    }
+    $data = market_data(array_values($ids));
+    $coins = [];
+    $seen = [];
+    foreach ($ids as $code => $id) {
+        if (!isset($data[$id]) || (isset($seen[$id]) && !isset($balances[$code]))) continue;   // one row per coin unless they hold several networks
+        $seen[$id] = true;
+        $d = $data[$id];
+        $coins[] = ['code' => strtoupper($code), 'name' => $d['name'], 'symbol' => $d['symbol'], 'price' => $d['price'], 'change' => $d['change'],
+            'held' => isset($balances[$code]) ? (float)$balances[$code][0] : 0.0, 'spark' => $d['spark']];
+    }
+    // Portfolio over time: current holdings × each point's price. Coins without market data count at today's price.
+    $points = [];
+    $n = 0;
+    foreach ($balances as $code => [$amt]) {
+        $id = coin_market_id($code);
+        if ($id !== '' && isset($data[$id])) $n = max($n, count($data[$id]['spark']));
+    }
+    for ($i = 0; $i < $n; $i++) {
+        $v = 0.0;
+        foreach ($balances as $code => [$amt]) {
+            $id = coin_market_id($code);
+            $s = $id !== '' && isset($data[$id]) ? $data[$id]['spark'] : [];
+            $px = $s ? ($s[(int)round($i * (count($s) - 1) / max(1, $n - 1))] ?? end($s)) : (coin_usd($code) ?? 0);
+            $v += $amt * $px;
+        }
+        $points[] = round($v, 2);
+    }
+    return ['coins' => $coins, 'portfolio' => $points, 'hours' => 168, 'updated' => date('c'), 'ok' => (bool)$data];
 }

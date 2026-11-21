@@ -561,3 +561,40 @@ html[data-theme="dark"] .coin-card { background: linear-gradient(180deg, var(--s
 .coin-amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem; }
 .coin-amt small { font-size: .85rem; font-weight: 700; color: var(--muted); }
 .coin-amt .usd { margin-left: auto; font-size: 1rem; font-weight: 800; color: var(--brand-600); }
+
+/* ---------- Live market panel (Crypto savings) ---------- */
+.market { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+.market .mk-list:only-child { grid-column: 1 / -1; }
+.live-pill { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); padding: .25rem .6rem; border-radius: 99px; }
+.live-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: mkpulse 2s infinite; }
+@keyframes mkpulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-pill i { animation: none; } }
+.mk-now { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+.mk-big { font-size: 1.9rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.mk-chg, .mk-c { font-weight: 700; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.mk-chg.up, .mk-c.up { color: var(--ok); }
+.mk-chg.down, .mk-c.down { color: var(--bad); }
+.mk-chart { position: relative; min-height: 190px; }
+.mk-skel { height: 190px; border-radius: 12px; background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2)); background-size: 200% 100%; animation: mkskel 1.4s infinite linear; }
+@keyframes mkskel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.mk-svg { display: block; overflow: visible; }
+.mk-grid { stroke: var(--line); stroke-width: 1; }
+.mk-axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.mk-line { fill: none; stroke: var(--brand-600); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.mk-stop1 { stop-color: var(--brand-600); stop-opacity: .28; }
+.mk-stop2 { stop-color: var(--brand-600); stop-opacity: 0; }
+.mk-cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.mk-dot { fill: var(--brand-600); stroke: var(--surface); stroke-width: 2; }
+.mk-tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: .4rem .6rem; display: grid; font-size: .8rem; white-space: nowrap; }
+.mk-tip b { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.mk-tip span { color: var(--muted); }
+.mk-table { margin-top: .6rem; }
+.mk-table summary { cursor: pointer; color: var(--muted); }
+.mk-row { gap: .7rem !important; }
+.mk-row .title .badge { font-size: .65rem; margin-left: .3rem; vertical-align: middle; }
+.spark { flex: none; }
+.spark.up polyline { stroke: var(--ok); }
+.spark.down polyline { stroke: var(--bad); }
+.mk-px { display: grid; justify-items: end; min-width: 92px; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) { .market { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .spark { width: 64px; } .mk-px { min-width: 80px; } .mk-big { font-size: 1.6rem; } }

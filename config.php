@@ -113,6 +113,8 @@ define('FLW_BASE_URL', rtrim(env('FLW_BASE_URL', 'https://api.flutterwave.com/v3
 // NOWPayments (crypto savings). NP_BASE_URL overrides both addresses (local tests only).
 define('NP_LIVE_URL', 'https://api.nowpayments.io/v1');
 define('NP_SANDBOX_URL', 'https://api-sandbox.nowpayments.io/v1');
+// Public crypto prices for the live market panel (MARKET_BASE_URL is for local tests only).
+define('MARKET_BASE_URL', rtrim(env('MARKET_BASE_URL', 'https://api.coingecko.com/api/v3'), '/'));
 
 // Email through Resend, if used instead of a hosting mailbox (RESEND_BASE_URL is for local tests only).
 define('RESEND_BASE_URL', rtrim(env('RESEND_BASE_URL', 'https://api.resend.com'), '/'));
