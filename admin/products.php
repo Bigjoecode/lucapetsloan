@@ -66,7 +66,7 @@ app_header('Loan products', 'products', 'admin');
       </div>
       <div class="row">
         <button class="btn btn-primary"><?= $edit ? 'Save changes' : 'Create product' ?></button>
-        <?php if ($edit): ?><a class="btn btn-ghost" href="products.php">Cancel</a><?php endif; ?>
+        <?php if ($edit): ?><a class="btn btn-ghost" href="products">Cancel</a><?php endif; ?>
       </div>
     </form>
   </div>

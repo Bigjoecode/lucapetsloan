@@ -69,7 +69,7 @@ app_header('Customers', 'users', 'admin');
         <tr>
           <td><strong><?= e($r['full_name']) ?></strong> <?= is_staff($r) ? '<span class="badge badge-info">' . e(label($r['role'])) . '</span>' : '' ?> <?= $r['status'] === 'suspended' ? badge('suspended') : '' ?></td>
           <td class="small"><?= e($r['phone']) ?><div class="muted"><?= e($r['email']) ?></div></td>
-          <td><?php if ($r['kyc_status'] !== 'none'): ?><a href="kyc.php?id=<?= $r['id'] ?>"><?= badge($r['kyc_status']) ?></a><?php else: ?><?= badge('none') ?><?php endif; ?></td>
+          <td><?php if ($r['kyc_status'] !== 'none'): ?><a href="kyc?id=<?= $r['id'] ?>"><?= badge($r['kyc_status']) ?></a><?php else: ?><?= badge('none') ?><?php endif; ?></td>
           <td class="num"><?= money($r['savings']) ?></td>
           <td><?= $r['last_loan'] ? badge($r['last_loan']) : '<span class="muted small">—</span>' ?></td>
           <td class="muted small"><?= fdate($r['created_at']) ?></td>

@@ -160,7 +160,7 @@ if ($id) {
     app_header('Loan #' . $id, 'loans', 'admin');
     ?>
     <div class="row between">
-      <div><a class="small" href="loans.php">← Loans</a><h2 style="margin:.2rem 0 0"><?= e($loan['full_name']) ?> · <?= money0($loan['amount']) ?></h2><span class="muted small"><?= e($loan['product']) ?> · <?= e($loan['phone']) ?></span></div>
+      <div><a class="small" href="loans">← Loans</a><h2 style="margin:.2rem 0 0"><?= e($loan['full_name']) ?> · <?= money0($loan['amount']) ?></h2><span class="muted small"><?= e($loan['product']) ?> · <?= e($loan['phone']) ?></span></div>
       <?= badge($s['display_status']) ?>
     </div>
 
@@ -191,7 +191,7 @@ if ($id) {
           </dl>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Customer profile</h2><a class="small" href="kyc.php?id=<?= $loan['user_id'] ?>">Full verification</a></div>
+          <div class="card-head"><h2>Customer profile</h2><a class="small" href="kyc?id=<?= $loan['user_id'] ?>">Full verification</a></div>
           <dl class="kv">
             <dt>Verification</dt><dd><?= badge($loan['kyc_status']) ?></dd>
             <?php if ($kyc): ?>

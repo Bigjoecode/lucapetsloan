@@ -86,7 +86,7 @@ app_header('Collections', 'collections', 'admin');
     <tbody>
       <?php foreach ($list as $r): $s = $r['snap']; ?>
         <tr>
-          <td><a href="loans.php?id=<?= $r['id'] ?>#collect"><strong><?= e($r['full_name']) ?></strong></a><div class="small"><a href="tel:<?= e($r['phone']) ?>"><?= e($r['phone']) ?></a> · loan #<?= $r['id'] ?></div></td>
+          <td><a href="loans?id=<?= $r['id'] ?>#collect"><strong><?= e($r['full_name']) ?></strong></a><div class="small"><a href="tel:<?= e($r['phone']) ?>"><?= e($r['phone']) ?></a> · loan #<?= $r['id'] ?></div></td>
           <td class="num"><strong><?= money($s['payoff']) ?></strong><div class="muted small">+<?= money($s['penalty']) ?> penalty</div></td>
           <td><span class="badge badge-<?= $s['late_days'] > 30 ? 'bad' : 'warn' ?>"><?= $s['late_days'] ?> days</span><?= $r['status'] === 'defaulted' ? ' ' . badge('defaulted') : '' ?></td>
           <td class="small"><?php if ($r['promise_state']): ?><?= money0($r['promise_amount']) ?> by <?= fdate($r['promise_date']) ?><div><?= badge(['promises' => 'pending', 'broken' => 'overdue', 'upcoming' => 'upcoming', 'kept' => 'paid'][$r['promise_state']]) ?></div><?php else: ?><span class="muted">—</span><?php endif; ?></td>
@@ -99,7 +99,7 @@ app_header('Collections', 'collections', 'admin');
           <td class="right">
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end"><?= csrf_field() ?><input type="hidden" name="loan_id" value="<?= $r['id'] ?>">
               <button class="btn btn-ghost btn-sm" name="action" value="remind" title="Send a polite reminder email">Email</button>
-              <a class="btn btn-primary btn-sm" href="loans.php?id=<?= $r['id'] ?>#collect">Log call</a>
+              <a class="btn btn-primary btn-sm" href="loans?id=<?= $r['id'] ?>#collect">Log call</a>
             </form>
           </td>
         </tr>

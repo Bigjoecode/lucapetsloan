@@ -99,7 +99,20 @@ function e($s): string
 
 function url(string $path = ''): string
 {
-    return BASE_URL . '/' . ltrim($path, '/');
+    return BASE_URL . '/' . clean_path(ltrim($path, '/'));
+}
+
+/**
+ * Page addresses without ".php": "crypto.php?coin=btc" → "crypto?coin=btc", "admin/index.php" → "admin/".
+ * Endpoints that outside services or the browser call by exact name keep it.
+ */
+function clean_path(string $path): string
+{
+    if (!CLEAN_URLS || preg_match('~(^|/)(flw_webhook|np_webhook|cron|sw|manifest)\.php(?=$|[?#])~', $path)) {
+        return $path;
+    }
+    $path = preg_replace('~(^|/)index\.php(?=$|[?#])~', '$1', $path);
+    return preg_replace('~\.php(?=$|[?#])~', '', $path, 1);
 }
 
 function redirect(string $path): never

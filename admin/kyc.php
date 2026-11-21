@@ -138,7 +138,7 @@ if ($id) {
     app_header('Verification · ' . $k['full_name'], 'kyc', 'admin');
     ?>
     <div class="row between">
-      <div><a class="small" href="kyc.php">← Verifications</a><h2 style="margin:.2rem 0 0"><?= e($k['full_name']) ?></h2><span class="muted small"><?= e($k['phone']) ?> · <?= e($k['email']) ?> · joined <?= fdate($k['joined']) ?></span></div>
+      <div><a class="small" href="kyc">← Verifications</a><h2 style="margin:.2rem 0 0"><?= e($k['full_name']) ?></h2><span class="muted small"><?= e($k['phone']) ?> · <?= e($k['email']) ?> · joined <?= fdate($k['joined']) ?></span></div>
       <?= badge($k['kyc_status']) ?>
     </div>
 

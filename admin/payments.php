@@ -69,7 +69,7 @@ app_header('Payments', 'payments', 'admin');
         <tr>
           <td><?= $t['id'] ?></td>
           <td><strong><?= e($t['full_name']) ?></strong><div class="muted small"><?= e($t['phone']) ?></div></td>
-          <td><?= e(label($t['type'])) ?><div class="muted small"><?= $t['plan_name'] ? e($t['plan_name']) : ($t['loan_id'] ? '<a href="loans.php?id=' . $t['loan_id'] . '">Loan #' . $t['loan_id'] . '</a>' : '') ?></div></td>
+          <td><?= e(label($t['type'])) ?><div class="muted small"><?= $t['plan_name'] ? e($t['plan_name']) : ($t['loan_id'] ? '<a href="loans?id=' . $t['loan_id'] . '">Loan #' . $t['loan_id'] . '</a>' : '') ?></div></td>
           <td class="num"><strong><?= money($t['amount']) ?></strong></td>
           <td><?= e(payment_methods()[$t['method']] ?? label($t['method'])) ?><div class="muted small"><?= e($t['reference'] ?: '') ?><?= $t['note'] ? ' ' . e($t['note']) : '' ?></div></td>
           <td class="muted small"><?= fdatetime($t['created_at']) ?></td>

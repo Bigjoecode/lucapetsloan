@@ -36,7 +36,7 @@ app_header('Home visits', 'visits', 'admin');
         <div class="row">
           <a class="btn btn-primary btn-sm" href="<?= e($directions($r)) ?>" target="_blank" rel="noopener">Directions</a>
           <a class="btn btn-ghost btn-sm" href="tel:<?= e($r['phone']) ?>"><?= icon('phone', 14) ?> Call</a>
-          <a class="btn btn-ghost btn-sm" href="kyc.php?id=<?= $r['user_id'] ?>">Open &amp; check in</a>
+          <a class="btn btn-ghost btn-sm" href="kyc?id=<?= $r['user_id'] ?>">Open &amp; check in</a>
         </div>
       </div>
     <?php endforeach; ?>

@@ -55,6 +55,8 @@ define('SETUP_KEY', env('SETUP_KEY', ''));
 define('APP_NAME', env('APP_NAME', 'LucaPet Loan'));
 define('APP_TAGLINE', 'Save daily. Borrow smart.');
 define('BASE_URL', env('BASE_URL', IS_VERCEL ? '' : '/lucapetloan'));   // URL path where the app lives (no trailing slash)
+// Addresses without ".php" (.htaccess serves /crypto from crypto.php). Set CLEAN_URLS=0 where rewrites aren't available.
+define('CLEAN_URLS', filter_var(env('CLEAN_URLS', '1'), FILTER_VALIDATE_BOOLEAN));
 define('CURRENCY', '₦');
 define('SUPPORT_PHONE', env('SUPPORT_PHONE', '+234 800 000 0000'));
 define('SUPPORT_EMAIL', env('SUPPORT_EMAIL', 'support@lucapetsloan.com'));
