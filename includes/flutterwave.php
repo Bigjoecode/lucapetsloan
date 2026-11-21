@@ -349,7 +349,7 @@ function flw_save_card(array $tx, array $data): void
         $tx['user_id'], $card['token'], (string)($data['customer']['email'] ?? ''),
         mb_substr((string)($card['type'] ?? 'Card'), 0, 40), $last4, mb_substr((string)($card['expiry'] ?? ''), 0, 7),
     ]);
-    notify((int)$tx['user_id'], 'Card saved', 'Your card ending ' . $last4 . ' can now pay your daily savings and loan automatically. Turn it on from Savings or your loan page.', 'savings.php');
+    notify((int)$tx['user_id'], 'Card saved', 'Your card ending ' . $last4 . ' can now pay your daily savings and loan automatically. Turn it on from Savings or your loan page.', 'savings.php', true);
 }
 
 function user_cards(int $userId): array

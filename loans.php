@@ -57,6 +57,7 @@ if (is_post()) {
             redirect('loan.php?id=' . $id);
         }
         notify_staff('loans', 'New loan application', $u['full_name'] . ' applied for ' . money0($amount) . '.', 'admin/loans.php?id=' . $id);
+        notify($uid, 'Loan application received', 'We received your application for ' . money0($amount) . ' and you accepted the loan agreement. We will review it and email you with our decision.', 'loan.php?id=' . $id, true);
         flash('success', 'Loan application submitted. We will review it and notify you.');
         redirect('loan.php?id=' . $id);
     } catch (UserError $e) {

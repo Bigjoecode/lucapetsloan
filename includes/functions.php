@@ -399,6 +399,32 @@ function login_user(array $user): void
     session_regenerate_id(true);
     $_SESSION['uid'] = (int)$user['id'];
     q('UPDATE users SET last_login_at = NOW() WHERE id = ?', [$user['id']]);
+    if (isset($user['email'])) {   // a real sign-in (sign-up passes only the new id)
+        signin_alert((int)$user['id']);
+    }
+}
+
+/** "Chrome on Android" from the browser's user agent. */
+function device_name(string $ua): string
+{
+    $os = match (true) {
+        str_contains($ua, 'Android') => 'Android', (bool)preg_match('/iPhone|iPad|iPod/', $ua) => 'iPhone/iPad',
+        str_contains($ua, 'Windows') => 'Windows', str_contains($ua, 'Mac OS') => 'Mac', str_contains($ua, 'Linux') => 'Linux', default => 'a device',
+    };
+    $br = match (true) {
+        str_contains($ua, 'Edg/') => 'Edge', str_contains($ua, 'OPR/') || str_contains($ua, 'Opera') => 'Opera',
+        str_contains($ua, 'Chrome/') => 'Chrome', str_contains($ua, 'Firefox/') => 'Firefox', str_contains($ua, 'Safari/') => 'Safari', default => 'a browser',
+    };
+    return $br . ' on ' . $os;
+}
+
+/** Email the account owner about each sign-in, so they spot one that wasn't them. */
+function signin_alert(int $userId): void
+{
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    message_user($userId, 'New sign-in to your account',
+        'Your ' . APP_NAME . ' account was signed in on ' . date('D j M Y, g:i A') . ' (Lagos time) from ' . device_name((string)($_SERVER['HTTP_USER_AGENT'] ?? '')) . ($ip !== '' ? ', IP address ' . $ip : '') . ".\n\nIf this was you, there's nothing to do. If not, change your password right away and call " . SUPPORT_PHONE . '.',
+        'profile.php');
 }
 
 /* ------------------------------------------------------------------ */
@@ -1080,11 +1106,11 @@ function process_transaction(int $txId, bool $approve, ?int $adminId, string $no
                     $plan = q_one('SELECT * FROM savings_plans WHERE id = ?', [$tx['savings_plan_id']]);
                     if ($plan && (float)$plan['target_amount'] > 0 && (float)$plan['balance'] >= (float)$plan['target_amount'] && $plan['status'] === 'active') {
                         q('UPDATE savings_plans SET status = "completed" WHERE id = ?', [$plan['id']]);
-                        notify($uid, 'Savings target reached 🎯', 'Your plan "' . $plan['name'] . '" hit its target.', 'savings.php?plan=' . $plan['id']);
+                        notify($uid, 'Savings target reached 🎯', 'Your plan "' . $plan['name'] . '" hit its target.', 'savings.php?plan=' . $plan['id'], true);
                     }
                 }
                 notify($uid, $approve ? 'Deposit confirmed' : 'Deposit not confirmed',
-                    money($amount) . ($approve ? ' was added to your savings.' : ' could not be verified. ' . $note), 'savings.php');
+                    money($amount) . ($approve ? ' was added to your savings.' : ' could not be verified. ' . $note), 'savings.php', true);
                 break;
 
             case 'withdrawal':

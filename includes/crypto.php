@@ -459,7 +459,7 @@ function crypto_refresh_deposit(string $paymentId): ?array
             notify((int)$row['user_id'], 'Crypto received', coin_amount($paid) . ' ' . strtoupper($row['coin']) . ' has arrived in your crypto savings.', 'crypto.php', true);
         }
     } elseif ($status === 'confirming' && $row['status'] === 'waiting') {
-        notify((int)$row['user_id'], 'Crypto on its way', 'We can see your ' . strtoupper($row['coin']) . ' deposit on the blockchain. It shows in your balance once it is confirmed.', 'crypto.php');
+        notify((int)$row['user_id'], 'Crypto on its way', 'We can see your ' . strtoupper($row['coin']) . ' deposit on the blockchain. It shows in your balance once it is confirmed.', 'crypto.php', true);
     }
     return q_one('SELECT * FROM crypto_deposits WHERE id = ?', [$row['id']]);
 }

@@ -17,6 +17,7 @@ if (is_post()) {
         $error = 'That PIN is too easy to guess. Avoid repeated or consecutive digits like 1111 or 1234.';
     } else {
         q('UPDATE users SET pin_hash = ?, pin_fails = 0, pin_locked_until = NULL, pin_set_at = NOW() WHERE id = ?', [password_hash($pin, PASSWORD_DEFAULT), $u['id']]);
+        notify((int)$u['id'], 'PIN created', 'Your 4-digit PIN is set. You will enter it each time you sign in and before money leaves your account. Never share it with anyone, including our staff. If this was not you, call ' . SUPPORT_PHONE . '.', 'profile.php', true);
         flash('success', 'PIN created. You\'ll enter it each time you sign in and before money leaves your account.');
         redirect(home_for($u));
     }

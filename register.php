@@ -37,7 +37,7 @@ if (is_post()) {
         }
         q('INSERT INTO savings_plans (user_id, name, daily_amount) VALUES (?, "Daily Savings", 500)', [$id]);
         np_open_wallet_quietly($id);   // crypto wallet ID, when crypto savings are on
-        notify($id, 'Welcome to ' . APP_NAME . '!', 'Start saving daily, then complete your verification to unlock loans.', 'verification.php');
+        notify($id, 'Welcome to ' . APP_NAME . '!', "Hi " . explode(' ', $name)[0] . ", your account is ready and we've opened a Daily Savings plan for you.\n\nNext steps: create your 4-digit PIN, make your first deposit, and complete your verification to unlock loans.", 'dashboard.php', true);
         login_user(['id' => $id]);
         flash('success', 'Account created and a Daily Savings plan opened. Now create your PIN.');
         redirect('pin_setup.php');

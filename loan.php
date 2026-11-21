@@ -19,6 +19,7 @@ if (is_post() && post('action') === 'auto_repay') {
         flash('error', 'Choose one of your saved cards.');
     } else {
         q('UPDATE loans SET auto_repay = ?, auto_card_id = ?, auto_fails = 0 WHERE id = ?', [(int)(bool)$cardId, $cardId ?: $loan['auto_card_id'], $loan['id']]);
+        notify($uid, $cardId ? 'Auto-repay is on' : 'Auto-repay turned off', $cardId ? 'Payments on loan #' . $loan['id'] . ' will be collected from your card on their due dates.' : 'Automatic repayment is off for loan #' . $loan['id'] . '. Remember to pay before the due date.', 'loan.php?id=' . $loan['id'], true);
         flash('success', $cardId ? 'Auto-repay is on. Each payment is collected from your card on its due date, so you never pay a late fee by accident.' : 'Auto-repay turned off.');
     }
     redirect('loan.php?id=' . $loan['id']);
@@ -53,6 +54,7 @@ if (is_post()) {
                 $pdo->rollBack();
                 throw $e;
             }
+            notify($uid, 'Loan payment made', money($amount) . ' was paid from your savings to loan #' . $loan['id'] . '.' . ($after['status'] === 'repaid' ? ' Your loan is fully repaid.' : ''), 'loan.php?id=' . $loan['id'], true);
             flash('success', money($amount) . ' paid from your savings.' . ($after['status'] === 'repaid' ? ' Your loan is fully repaid 🎉' : ''));
         } elseif (post('source') === 'flutterwave') {
             if (!flw_deposits_on()) throw new UserError('Online payment is not available right now.');
@@ -73,6 +75,7 @@ if (is_post()) {
             q('INSERT INTO transactions (user_id, type, amount, method, reference, loan_id) VALUES (?, "loan_repayment", ?, ?, ?, ?)',
                 [$uid, $amount, $method, mb_substr(post('reference'), 0, 80), $loan['id']]);
             notify_staff('payments', 'Repayment to confirm', $u['full_name'] . ' says they paid ' . money($amount) . ' on loan #' . $loan['id'] . '.', 'admin/payments.php?type=loan_repayment');
+            notify($uid, 'Repayment submitted', 'We received your ' . money($amount) . ' repayment for loan #' . $loan['id'] . '. It is applied as soon as we confirm the payment.', 'loan.php?id=' . $loan['id'], true);
             flash('success', 'Repayment of ' . money($amount) . ' submitted. It will be applied to your loan once we confirm it.');
         }
     } catch (UserError $e) {

@@ -19,6 +19,7 @@ if (is_post()) {
                 throw new UserError('You can have up to 5 open savings plans.');
             }
             q('INSERT INTO savings_plans (user_id, name, daily_amount, target_amount) VALUES (?,?,?,?)', [$uid, mb_substr($name, 0, 80), $daily, max(0, $target)]);
+            notify($uid, 'Savings plan created', 'Your plan "' . $name . '" is ready: ' . money0($daily) . ' a day' . ($target > 0 ? ' towards ' . money0($target) : '') . '. It earns ' . setting('savings_annual_rate') . '% a year, added daily.', 'savings.php', true);
             flash('success', 'Savings plan "' . $name . '" created.');
         }
 
@@ -46,6 +47,7 @@ if (is_post()) {
             q('INSERT INTO transactions (user_id, type, amount, method, reference, savings_plan_id) VALUES (?, "deposit", ?, ?, ?, ?)',
                 [$uid, $amount, $method, mb_substr(post('reference'), 0, 80), $plan['id']]);
             notify_staff('payments', 'Deposit to confirm', $u['full_name'] . ' says they paid ' . money($amount) . ' (' . (payment_methods()[$method] ?? $method) . ').', 'admin/payments.php?type=deposit');
+            notify($uid, 'Deposit submitted', 'We received your ' . money($amount) . ' deposit to "' . $plan['name'] . '". Your savings go up as soon as we confirm the payment.', 'savings.php', true);
             flash('success', 'Deposit of ' . money($amount) . ' submitted. Your savings will go up once we confirm the payment.');
         }
 
@@ -74,6 +76,7 @@ if (is_post()) {
                 $pdo->rollBack();
                 throw $e;
             }
+            notify($uid, 'Withdrawal requested', 'You asked to withdraw ' . money($amount) . ' to ' . $kyc['bank_name'] . ' ' . $kyc['account_number'] . '. We will email you when it is paid. If this was not you, call ' . SUPPORT_PHONE . '.', 'savings.php', true);
             $hold = auto_payout_hold($uid, $txId);
             if ($hold !== null) {
                 notify_staff('payments', 'Withdrawal to check', $u['full_name'] . ' asked to withdraw ' . money($amount) . '. Not sent automatically: ' . $hold . '.', 'admin/payments.php?type=withdrawal');
@@ -98,6 +101,7 @@ if (is_post()) {
             if (!$plan) throw new UserError('Plan not found.');
             if ((float)$plan['balance'] > 0) throw new UserError('Withdraw the balance before closing this plan.');
             q('UPDATE savings_plans SET status = "closed", auto_save = 0 WHERE id = ?', [$plan['id']]);
+            notify($uid, 'Savings plan closed', 'Your plan "' . $plan['name'] . '" is closed.', 'savings.php', true);
             flash('success', 'Plan closed.');
         }
 
@@ -108,9 +112,11 @@ if (is_post()) {
             if ($cardId) {
                 if (!q_val('SELECT 1 FROM payment_cards WHERE id = ? AND user_id = ? AND removed_at IS NULL', [$cardId, $uid])) throw new UserError('Choose one of your saved cards.');
                 q('UPDATE savings_plans SET auto_save = 1, auto_card_id = ?, auto_fails = 0 WHERE id = ?', [$cardId, $plan['id']]);
+                notify($uid, 'Auto-save is on', money0($plan['daily_amount']) . ' will be collected from your card every morning for "' . $plan['name'] . '" on days you have not saved yet. You can turn it off any time.', 'savings.php', true);
                 flash('success', 'Auto-save is on: ' . money0($plan['daily_amount']) . ' will be collected from your card every morning on days you have not saved yet.');
             } else {
                 q('UPDATE savings_plans SET auto_save = 0 WHERE id = ?', [$plan['id']]);
+                notify($uid, 'Auto-save turned off', 'Automatic daily saving is off for "' . $plan['name'] . '".', 'savings.php', true);
                 flash('success', 'Auto-save turned off for ' . $plan['name'] . '.');
             }
         }
@@ -120,6 +126,7 @@ if (is_post()) {
             q('UPDATE payment_cards SET removed_at = NOW() WHERE id = ? AND user_id = ?', [$cardId, $uid]);
             q('UPDATE savings_plans SET auto_save = 0 WHERE auto_card_id = ? AND user_id = ?', [$cardId, $uid]);
             q('UPDATE loans SET auto_repay = 0 WHERE auto_card_id = ? AND user_id = ?', [$cardId, $uid]);
+            notify($uid, 'Card removed', 'A saved card was removed from your account and any automatic payments using it were switched off. If this was not you, call ' . SUPPORT_PHONE . '.', 'savings.php', true);
             flash('success', 'Card removed. Automatic payments that used it are switched off.');
         }
     } catch (UserError $e) {

@@ -25,6 +25,7 @@ if (is_post()) {
             q('INSERT INTO ajo_groups (name, owner_id, contribution, frequency, size, invite_code) VALUES (?,?,?,?,?,?)', [$name, $uid, $amount, $freq, $size, $code]);
             $id = (int)db()->lastInsertId();
             q('INSERT INTO ajo_members (group_id, user_id) VALUES (?, ?)', [$id, $uid]);
+            notify($uid, 'Group savings created', 'Your group "' . $name . '" is ready. Share the invite code ' . $code . ' with ' . ($size - 1) . ' more people; it starts when you press Start.', 'ajo.php', true);
             flash('success', 'Group created. Share the invite code ' . $code . ' with ' . ($size - 1) . ' more people.');
         } elseif ($action === 'join') {
             $g = q_one('SELECT * FROM ajo_groups WHERE invite_code = ?', [strtoupper(trim(post('code')))]);
@@ -33,7 +34,8 @@ if (is_post()) {
             $count = (int)q_val('SELECT COUNT(*) FROM ajo_members WHERE group_id = ?', [$g['id']]);
             if ($count >= (int)$g['size']) throw new UserError('That group is already full.');
             q('INSERT IGNORE INTO ajo_members (group_id, user_id) VALUES (?, ?)', [$g['id'], $uid]);
-            notify((int)$g['owner_id'], 'New group member', $u['full_name'] . ' joined "' . $g['name'] . '" (' . ($count + 1) . ' of ' . $g['size'] . ').', 'ajo.php?id=' . $g['id']);
+            notify((int)$g['owner_id'], 'New group member', $u['full_name'] . ' joined "' . $g['name'] . '" (' . ($count + 1) . ' of ' . $g['size'] . ').', 'ajo.php?id=' . $g['id'], true);
+            notify($uid, 'You joined a savings group', 'You are now a member of "' . $g['name'] . '": ' . money0($g['contribution']) . ' per round, ' . $g['size'] . ' members.', 'ajo.php?id=' . $g['id'], true);
             $id = (int)$g['id'];
             flash('success', 'You joined "' . $g['name'] . '".');
         } else {
@@ -55,7 +57,9 @@ if (is_post()) {
                 redirect('ajo.php');
             } elseif ($action === 'pay') {
                 check_pin($u, (string)post('pin'));
-                flash('success', ajo_contribute($id, $uid));
+                $msg = ajo_contribute($id, $uid);
+                notify($uid, 'Group contribution paid', $msg, 'ajo.php?id=' . $id, true);
+                flash('success', $msg);
             }
         }
     } catch (UserError $e) {

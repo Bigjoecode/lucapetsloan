@@ -108,6 +108,7 @@ if (is_post() && $editable) {
         }
         q('UPDATE users SET kyc_status = "submitted" WHERE id = ?', [$uid]);
         notify_staff('kyc', 'New verification to review', $u['full_name'] . ' submitted verification details.', 'admin/kyc.php?id=' . $uid);
+        notify($uid, 'Verification received', 'Thanks, we have your details and documents. A member of our team will review them and contact you to agree a date for your home visit.', 'verification.php', true);
         flash('success', 'Verification submitted. We will contact you to confirm the date of your home visit.');
         redirect('verification.php');
     }

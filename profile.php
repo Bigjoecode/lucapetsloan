@@ -15,6 +15,10 @@ if (is_post()) {
             flash('error', 'That email or phone is already used by another account.');
         } else {
             q('UPDATE users SET phone = ?, email = ? WHERE id = ?', [$phone, $email, $u['id']]);
+            if ($email !== strtolower($u['email'])) {   // tell the old address too, in case someone else made the change
+                send_mail($u['email'], 'Your email address was changed · ' . APP_NAME, email_html('Your email address was changed', 'Your ' . APP_NAME . ' account now uses ' . $email . ".\n\nIf you did not make this change, call " . SUPPORT_PHONE . ' right away.'));
+            }
+            notify((int)$u['id'], 'Contact details updated', 'Your phone number is now ' . $phone . ' and your email is ' . $email . '. If this was not you, call ' . SUPPORT_PHONE . '.', 'profile.php', true);
             flash('success', 'Contact details updated.');
         }
     } elseif (post('action') === 'payout' && $banks) {
@@ -48,7 +52,7 @@ if (is_post()) {
             flash('error', 'That PIN is too easy to guess. Avoid repeated or consecutive digits.');
         } else {
             q('UPDATE users SET pin_hash = ?, pin_fails = 0, pin_locked_until = NULL WHERE id = ?', [password_hash($pin, PASSWORD_DEFAULT), $u['id']]);
-            notify((int)$u['id'], has_pin($u) ? 'PIN changed' : 'PIN set', 'Your payment PIN was ' . (has_pin($u) ? 'changed' : 'set') . '. If this was not you, call ' . SUPPORT_PHONE . '.', 'profile.php', has_pin($u));
+            notify((int)$u['id'], has_pin($u) ? 'PIN changed' : 'PIN set', 'Your payment PIN was ' . (has_pin($u) ? 'changed' : 'set') . '. If this was not you, call ' . SUPPORT_PHONE . '.', 'profile.php', true);
             flash('success', 'PIN saved. You will use it to withdraw and pay from savings.');
         }
     } elseif (post('action') === 'password') {
@@ -58,6 +62,7 @@ if (is_post()) {
             flash('error', 'New password must be at least 8 characters and match the confirmation.');
         } else {
             q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash((string)post('new'), PASSWORD_DEFAULT), $u['id']]);
+            notify((int)$u['id'], 'Password changed', 'Your password was changed from your profile. If this was not you, call ' . SUPPORT_PHONE . ' right away.', 'profile.php', true);
             flash('success', 'Password changed.');
         }
     }

@@ -26,6 +26,7 @@ if (is_post()) {
             $available = crypto_available($uid, $coin, crypto_balances($uid));
             if ($amount > $available + 1e-12) throw new UserError('You can withdraw up to ' . coin_amount($available) . ' ' . strtoupper($coin) . '.');
             q('INSERT INTO crypto_withdrawals (user_id, coin, amount, address, extra_id) VALUES (?,?,?,?,?)', [$uid, $coin, $amount, $address, $memo ?: null]);
+            notify($uid, 'Crypto withdrawal requested', 'You asked to send ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' to ' . substr($address, 0, 8) . '…' . substr($address, -6) . '. We check and send crypto withdrawals within 24 hours. If this was not you, call ' . SUPPORT_PHONE . '.', 'crypto.php', true);
             notify_staff('payments', 'Crypto withdrawal to send', $u['full_name'] . ' asked to withdraw ' . coin_amount($amount) . ' ' . strtoupper($coin) . '.', 'admin/crypto.php');
             flash('success', 'Withdrawal of ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' requested. We check and send crypto withdrawals within 24 hours.');
         }

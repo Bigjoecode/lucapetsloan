@@ -32,7 +32,7 @@ if (is_post()) {
             }
             if ($role === 'admin' && !$perms) throw new UserError('Give the new staff member at least one permission.');
             q('UPDATE users SET role = ?, permissions = ? WHERE id = ?', [$role, $role === 'admin' ? implode(',', $perms) : null, $user['id']]);
-            notify((int)$user['id'], 'You now have staff access', 'Open the staff console from the menu.', 'admin/index.php');
+            notify((int)$user['id'], 'You now have staff access', 'Open the staff console from the menu.', 'admin/index.php', true);
             audit('staff.add', 'User #' . $user['id'], $user['full_name'] . ' as ' . $role . ($role === 'admin' ? ': ' . implode(', ', $perms) : ''));
             flash('success', $user['full_name'] . ' added as ' . label($role) . '.');
         } else {

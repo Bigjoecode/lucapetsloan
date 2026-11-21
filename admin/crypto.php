@@ -27,7 +27,7 @@ if (is_post()) {
             if ($w['status'] !== 'pending') throw new UserError('Only requests whose coins haven\'t been moved can be declined here.');
             $note = mb_substr(trim((string)post('note')), 0, 255) ?: 'Declined by staff';
             q('UPDATE crypto_withdrawals SET status = "rejected", note = ?, staff_id = ? WHERE id = ?', [$note, $admin['id'], $wid]);
-            notify((int)$w['uid'], 'Crypto withdrawal declined', $what . ': ' . $note . '. The coins are still in your crypto savings.', 'crypto.php');
+            notify((int)$w['uid'], 'Crypto withdrawal declined', $what . ': ' . $note . '. The coins are still in your crypto savings.', 'crypto.php', true);
             audit('crypto.withdraw_reject', 'Crypto withdrawal #' . $wid, $what . ' · ' . $note);
             flash('success', 'Declined. The coins stay in the customer\'s wallet.');
         }
