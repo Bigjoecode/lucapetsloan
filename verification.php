@@ -247,7 +247,7 @@ app_header('Verification', 'verification');
 
   <fieldset>
     <legend><?= icon('shield', 18) ?> Collateral</legend>
-    <p class="muted small" style="margin-top:0">Something of value you pledge as security for your loan. Our field officer will see it during the home visit. You keep using it; it's only claimed if the loan is not repaid.</p>
+    <p class="muted small" style="margin-top:0">Something of value you pledge as security for your loan. Our field officer will see it during the home visit, and you keep using it. It is only retrieved if the interest is not paid by the end of your loan term (for example, all 3 months); if the loan is still not settled after that, it is sold to recover what you owe.</p>
     <div class="form-grid">
       <label>What you're offering <?= $err('collateral_type') ?><select name="collateral_type" required><option value="">Select</option><?php foreach (COLLATERAL_TYPES as $o): ?><option <?= $sel('collateral_type', $o) ?>><?= e($o) ?></option><?php endforeach; ?></select></label>
       <label>Estimated value <?= $err('collateral_value') ?><input type="number" name="collateral_value" min="1" step="1000" required value="<?= $v('collateral_value') ?>"></label>

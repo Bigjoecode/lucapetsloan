@@ -109,6 +109,18 @@ function run_daily_jobs(int $budgetSeconds = 50): array
         }
     }
 
+    // 3a. Interest for the whole term unpaid at the end of the term: the collateral will be retrieved.
+    foreach (q('SELECT * FROM loans WHERE status IN ("active","defaulted") AND due_date < CURDATE() AND collateral_status IS NULL')->fetchAll() as $l) {
+        if (time() > $stop) break;
+        if (!collateral_due($l)) continue;
+        $owed = term_interest($l) - (float)$l['amount_paid'];
+        $out['reminders'] += (int)remind((int)$l['user_id'], 'collateral_notice', (string)$l['id'], 'Your collateral will be retrieved',
+            'Loan #' . $l['id'] . ' has reached the end of its term and the interest for the term has not been paid (' . money($owed) . ' still unpaid). '
+            . 'As agreed in your loan agreement, our field officer will now retrieve the collateral you pledged. If the loan is still not settled, the collateral will be sold to recover what you owe. '
+            . 'To stop this, pay now or call ' . SUPPORT_PHONE . '.', 'loan.php?id=' . $l['id']);
+        notify_staff('collections', 'Collateral to retrieve', 'Loan #' . $l['id'] . ': the term has ended and the interest was not paid. Send a field officer to retrieve the collateral.', 'admin/collections.php#collateral');
+    }
+
     // 3. Loan reminders: 3 days before, on the day, and 1, 3, 7 and 14 days late.
     foreach (q('SELECT * FROM loans WHERE status = "active"')->fetchAll() as $l) {
         if (time() > $stop) break;

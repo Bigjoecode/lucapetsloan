@@ -8,7 +8,7 @@ $planSelect = function () use ($openPlans): void { ?>
       <?php foreach ($openPlans as $p): ?><option value="<?= $p['id'] ?>" data-amount="<?= (float)$p['daily_amount'] ?>"><?= e($p['name']) ?> (<?= money0($p['daily_amount']) ?>/day)</option><?php endforeach; ?>
     </select>
   </label>
-  <label>Amount<input type="number" name="amount" min="<?= setting('min_deposit') ?>" step="50" required value="<?= (float)$openPlans[0]['daily_amount'] ?>"></label>
+  <label>Amount<input type="number" name="amount" min="<?= min(setting('min_deposit'), setting('min_daily_saving')) ?>" step="50" required value="<?= (float)$openPlans[0]['daily_amount'] ?>"></label>
 <?php };
 ?>
 <dialog id="dlg-deposit">

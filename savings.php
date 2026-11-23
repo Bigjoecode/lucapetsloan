@@ -14,7 +14,7 @@ if (is_post()) {
             $name = post('name') ?: 'Savings plan';
             $daily = (float)post('daily_amount');
             $target = (float)post('target_amount');
-            if ($daily < setting('min_deposit')) throw new UserError('Daily amount must be at least ' . money0(setting('min_deposit')) . '.');
+            if ($daily < setting('min_daily_saving')) throw new UserError('Daily amount must be at least ' . money0(setting('min_daily_saving')) . '.');
             if ((int)q_val('SELECT COUNT(*) FROM savings_plans WHERE user_id = ? AND status <> "closed"', [$uid]) >= 5) {
                 throw new UserError('You can have up to 5 open savings plans.');
             }
@@ -28,7 +28,9 @@ if (is_post()) {
             $amount = round((float)post('amount'), 2);
             $method = post('method');
             if (!$plan) throw new UserError('Choose an active savings plan.');
-            if ($amount < setting('min_deposit')) throw new UserError('Minimum deposit is ' . money0(setting('min_deposit')) . '.');
+            // A plan's own daily amount can always be paid, even when it's below the one-off minimum.
+            $minHere = min((float)setting('min_deposit'), max((float)setting('min_daily_saving'), (float)$plan['daily_amount']));
+            if ($amount < $minHere) throw new UserError('Minimum deposit is ' . money0($minHere) . '.');
             if ($method === 'flutterwave') {
                 if (!flw_deposits_on()) throw new UserError('Online payment is not available right now.');
                 q('INSERT INTO transactions (user_id, type, amount, method, reference, savings_plan_id, save_card) VALUES (?, "deposit", ?, "flutterwave", ?, ?, ?)',
@@ -242,7 +244,7 @@ app_header('Savings', 'savings');
       <input type="hidden" name="action" value="create_plan">
       <label>Plan name<input name="name" maxlength="80" placeholder="e.g. Shop rent, School fees" required></label>
       <div class="form-grid">
-        <label>Daily amount<input type="number" name="daily_amount" min="<?= setting('min_deposit') ?>" step="50" value="1000" required></label>
+        <label>Daily amount<input type="number" name="daily_amount" min="<?= setting('min_daily_saving') ?>" step="50" value="<?= max(1000, setting('min_daily_saving')) ?>" required></label>
         <label>Target <span class="hint">optional</span><input type="number" name="target_amount" min="0" step="1000" placeholder="0"></label>
       </div>
       <button class="btn btn-primary"><?= icon('plus', 16) ?> Create plan</button>

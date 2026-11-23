@@ -58,7 +58,7 @@ define('BASE_URL', env('BASE_URL', IS_VERCEL ? '' : '/lucapetloan'));   // URL p
 // Addresses without ".php" (.htaccess serves /crypto from crypto.php). Set CLEAN_URLS=0 where rewrites aren't available.
 define('CLEAN_URLS', filter_var(env('CLEAN_URLS', '1'), FILTER_VALIDATE_BOOLEAN));
 define('CURRENCY', '₦');
-define('SUPPORT_PHONE', env('SUPPORT_PHONE', '+234 800 000 0000'));
+define('SUPPORT_PHONE', env('SUPPORT_PHONE', '+234 903 540 9081'));
 define('SUPPORT_EMAIL', env('SUPPORT_EMAIL', 'support@lucapetsloan.com'));
 
 // Business rules. These are only the starting values: the super admin changes
@@ -69,6 +69,7 @@ const SETTING_DEFAULTS = [
     'loan_tenures'         => '1,2',    // allowed terms in 30-day months: 30 or 60 days
     'savings_annual_rate'  => 12.0,     // percent a year, earned daily (like PiggyVest/Cowrywise flexible savings)
     'min_deposit'          => 100,
+    'min_daily_saving'     => 500,      // smallest daily amount for a savings plan (and for paying that day's amount)
     'min_withdrawal'       => 500,
     'manual_deposits'      => 1,        // customers may pay by bank transfer and enter a reference
     'flw_deposits'         => 1,        // pay online through Flutterwave (keys under Integrations)

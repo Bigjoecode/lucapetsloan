@@ -549,7 +549,7 @@ function store_upload(string $field, int $userId): ?string
 }
 
 /** Bump when schema.php or the migrations change: live sites then upgrade themselves on the next visit. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 function ensure_schema(): void
 {
@@ -624,6 +624,13 @@ function run_schema(): array
         'ALTER TABLE users ADD COLUMN pin_set_at DATETIME NULL',
         'ALTER TABLE kyc ADD COLUMN nin_check VARCHAR(20) NULL',
         'ALTER TABLE kyc ADD COLUMN nin_check_details VARCHAR(255) NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_status VARCHAR(20) NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_retrieved_at DATETIME NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_retrieved_by INT UNSIGNED NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_sold_at DATETIME NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_sale_amount DECIMAL(14,2) NULL',
+        'ALTER TABLE loans ADD COLUMN collateral_note VARCHAR(255) NULL',
+        'ALTER TABLE notifications MODIFY body TEXT NOT NULL',   // longer messages (collateral notices, sign-in alerts)
         'ALTER TABLE users ADD COLUMN np_sub_id VARCHAR(30) NULL',
     ];
     foreach ($migrations as $sql) {
@@ -1067,6 +1074,23 @@ function has_open_loan(int $userId): ?array
  * Apply a confirmed repayment to a loan (caller holds the transaction).
  * Closes the loan once the payoff amount is covered.
  */
+/**
+ * Collateral rule: it stays with the customer. It is only retrieved when the loan term has ended
+ * and the customer has not paid at least the interest for the whole term (e.g. all 3 months).
+ */
+function term_interest(array $loan): float
+{
+    return round((float)$loan['amount'] * (float)$loan['interest_rate'] / 100 * (int)$loan['tenure_months'], 2);
+}
+
+function collateral_due(array $loan): bool
+{
+    return in_array($loan['status'], ['active', 'defaulted'], true)
+        && !empty($loan['due_date']) && $loan['due_date'] < date('Y-m-d')
+        && (float)$loan['amount_paid'] + 0.009 < term_interest($loan)
+        && empty($loan['collateral_status']);
+}
+
 function apply_loan_payment(int $loanId, float $amount): array
 {
     $loan = q_one('SELECT * FROM loans WHERE id = ? FOR UPDATE', [$loanId]);
