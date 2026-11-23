@@ -7,6 +7,7 @@ require_once __DIR__ . '/integrations.php';
 require_once __DIR__ . '/flutterwave.php';
 require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/messaging.php';
+require_once __DIR__ . '/login_code.php';
 require_once __DIR__ . '/community.php';
 require_once __DIR__ . '/identity.php';
 require_once __DIR__ . '/session.php';

@@ -62,6 +62,7 @@ if (is_post()) {
             flash('error', 'New password must be at least 8 characters and match the confirmation.');
         } else {
             q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash((string)post('new'), PASSWORD_DEFAULT), $u['id']]);
+            forget_devices((int)$u['id']);
             notify((int)$u['id'], 'Password changed', 'Your password was changed from your profile. If this was not you, call ' . SUPPORT_PHONE . ' right away.', 'profile.php', true);
             flash('success', 'Password changed.');
         }

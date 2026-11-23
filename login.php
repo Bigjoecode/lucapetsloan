@@ -22,20 +22,8 @@ if (is_post()) {
                 $error = 'This account is suspended. Please contact support.';
             } else {
                 unset($_SESSION['login_fails']);
-                if (is_staff($user) && $user['totp_enabled']) {
-                    session_regenerate_id(true);
-                    $_SESSION['2fa_uid'] = (int)$user['id'];
-                    $_SESSION['2fa_at'] = time();
-                    redirect('login_2fa.php');
-                }
-                if (has_pin($user)) {
-                    session_regenerate_id(true);
-                    $_SESSION['pin_uid'] = (int)$user['id'];
-                    $_SESSION['pin_at'] = time();
-                    redirect('login_pin.php');
-                }
-                login_user($user);   // no PIN yet: they're sent to create one
-                redirect(home_for($user));
+                // Next: authenticator code (staff who use one), else the email code, then the PIN.
+                redirect(after_password($user));
             }
         } else {
             $_SESSION['login_fails'] = ['n' => $fails['n'] + 1, 't' => time()];
