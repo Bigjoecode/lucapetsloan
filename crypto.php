@@ -38,6 +38,17 @@ if (is_post()) {
             notify_staff('payments', 'Crypto withdrawal to send', $u['full_name'] . ' asked to withdraw ' . coin_amount($amount) . ' ' . strtoupper($coin) . '. Not sent automatically: ' . $why . '.', 'admin/crypto.php');
             flash('success', 'Withdrawal of ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' requested' . ($fee > 0 ? ': you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee' : '') . '. We check and send crypto withdrawals within 24 hours.');
         }
+        if ($action === 'swap') {
+            $plans = (int)post('plan_id');
+            if (post('direction') === 'to_crypto') {
+                $got = swap_naira_to_usdt($u, $plans, (float)post('ngn'), (float)post('rate'), (string)post('pin'));
+                flash('success', 'Swapped! ' . coin_amount($got) . ' USDT is now in your crypto savings.');
+            } else {
+                $got = swap_usdt_to_naira($u, $plans, (float)post('usdt'), (float)post('rate'), (string)post('pin'));
+                flash('success', 'Swapped! ' . money($got) . ' has been added to your savings.');
+            }
+            redirect('crypto.php');
+        }
         if ($action === 'refresh') {
             crypto_sync($uid);
             $_SESSION['crypto_synced'] = time();
@@ -103,6 +114,10 @@ if (!$balanceOk) {
     $balances = array_filter($balances, fn($b) => $b[0] > 0);
 }
 $adminDetail = array_values(array_unique(array_filter($adminDetail)));
+$swapRates = $on && swap_on() && $wallet !== '' ? swap_rates() : null;
+$swapPlans = $swapRates ? q('SELECT * FROM savings_plans WHERE user_id = ? AND status = "active" ORDER BY id', [$uid])->fetchAll() : [];
+$swapUsdt = $swapRates ? crypto_available($uid, SWAP_COIN, $balances) : 0;
+$swapLeft = $swapRates ? max(0, (float)setting('swap_daily_limit_ngn') - swap_today_ngn($uid)) : 0;
 $addresses = q('SELECT * FROM crypto_wallets WHERE user_id = ? ORDER BY funded DESC, id', [$uid])->fetchAll();
 $byCoin = array_column($addresses, null, 'coin');
 $pick = strtolower((string)($_GET['coin'] ?? ''));
@@ -189,6 +204,7 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="refresh"><button class="btn btn-glass btn-sm"><?= icon('clock', 16) ?> Check for deposits</button></form>
     <div class="actions">
       <?php if ($balances): ?><button type="button" class="btn btn-glass" data-open="dlg-cwithdraw"><?= icon('send', 18) ?> Send</button><?php endif; ?>
+      <?php if ($swapRates): ?><button type="button" class="btn btn-glass" data-open="dlg-swap"><?= icon('arrow', 18) ?> Swap</button><?php endif; ?>
       <a class="btn btn-white" href="#receive"><?= icon('down', 18) ?> Receive</a>
     </div>
   </div>
@@ -422,6 +438,59 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
   var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { if (last) renderValue(last.portfolio || [], last.hours || 168); }, 200); });
 })();
 </script>
+<?php if ($swapRates): ?>
+<dialog id="dlg-swap">
+  <div class="dlg-head"><h2>Swap naira ⇄ USDT</h2><button class="icon-x" data-close aria-label="Close"><?= icon('x') ?></button></div>
+  <div class="dlg-body">
+    <div class="swap-tabs" role="tablist">
+      <button type="button" class="on" data-swap-tab="to_crypto">Naira → USDT</button>
+      <button type="button" data-swap-tab="to_naira">USDT → Naira</button>
+    </div>
+    <?php if (!$swapPlans): ?><p class="muted">Open a savings plan first; swaps move money between your savings and USDT.</p><?php else: ?>
+    <form method="post" class="form" data-swap data-buy="<?= $swapRates['buy'] ?>" data-sell="<?= $swapRates['sell'] ?>">
+      <?= csrf_field() ?><input type="hidden" name="action" value="swap"><input type="hidden" name="direction" value="to_crypto"><input type="hidden" name="rate" value="<?= $swapRates['buy'] ?>">
+      <div class="swap-rate"><span data-swap-ratetext>1 USDT = <?= money($swapRates['buy']) ?></span><small>Rate held while this window is open · updates every few minutes</small></div>
+      <label><span data-swap-plan-label>From savings plan</span>
+        <select name="plan_id"><?php foreach ($swapPlans as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?> (<?= money($p['balance']) ?>)</option><?php endforeach; ?></select></label>
+      <label data-swap-in="to_crypto">You pay (₦)<input type="number" name="ngn" min="1000" step="100" placeholder="e.g. 50000"></label>
+      <label data-swap-in="to_naira" hidden>You swap (USDT) <span class="hint"><?= e(coin_amount($swapUsdt)) ?> USDT available</span><input type="number" name="usdt" min="1" step="any" max="<?= $swapUsdt ?>" placeholder="e.g. 20"></label>
+      <div class="swap-get"><small>You get</small><b data-swap-out>—</b></div>
+      <label>PIN<input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label>
+      <p class="small muted" style="margin:0">Limit: <?= money0($swapLeft) ?> left today. Swaps are instant and can't be reversed. No withdrawal fee applies.</p>
+      <button class="btn btn-primary btn-block">Swap now</button>
+    </form>
+    <?php endif; ?>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var f = document.querySelector('[data-swap]');
+    if (!f) return;
+    var buy = +f.dataset.buy, sell = +f.dataset.sell, dir = 'to_crypto';
+    var out = f.querySelector('[data-swap-out]'), rt = f.querySelector('[data-swap-ratetext]');
+    var naira = function (v) { return '₦' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    function calc() {
+      if (dir === 'to_crypto') { var n = +f.ngn.value; out.textContent = n > 0 ? (Math.floor(n / buy * 1e6) / 1e6) + ' USDT' : '—'; }
+      else { var u = +f.usdt.value; out.textContent = u > 0 ? naira(Math.round(u * sell * 100) / 100) : '—'; }
+    }
+    document.querySelectorAll('[data-swap-tab]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        dir = b.dataset.swapTab;
+        document.querySelectorAll('[data-swap-tab]').forEach(function (x) { x.classList.toggle('on', x === b); });
+        f.direction.value = dir; f.rate.value = dir === 'to_crypto' ? buy : sell;
+        rt.textContent = '1 USDT = ' + naira(dir === 'to_crypto' ? buy : sell);
+        f.querySelector('[data-swap-plan-label]').textContent = dir === 'to_crypto' ? 'From savings plan' : 'Into savings plan';
+        f.querySelectorAll('[data-swap-in]').forEach(function (l) { var on = l.dataset.swapIn === dir; l.hidden = !on; l.querySelector('input').required = on; });
+        calc();
+      });
+    });
+    f.ngn.required = true;
+    if (location.hash === '#swap') { var d = document.getElementById('dlg-swap'); if (d) d.showModal(); }
+    f.addEventListener('input', calc);
+  })();
+</script>
+<?php endif; ?>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
   document.querySelectorAll('[data-qr]').forEach(function (el) {

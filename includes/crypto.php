@@ -638,6 +638,163 @@ function crypto_refresh_payouts(): int
     return $n;
 }
 
+/* ---------- Naira ↔ USDT swaps (LucaPet buys and sells from its own NOWPayments main balance) ---------- */
+
+const SWAP_COIN = 'usdttrc20';
+
+function swap_on(): bool
+{
+    return crypto_on() && setting('swap_enabled');
+}
+
+/** Market naira per USDT (cached 5 minutes), or null. */
+function swap_mid_rate(): ?float
+{
+    $r = np_cached('np_swap_mid', 300, function (): array {
+        $res = np_request('GET', '/estimate?amount=100000&currency_from=ngn&currency_to=' . SWAP_COIN);
+        $usdt = (float)($res['body']['estimated_amount'] ?? 0);
+        return $res['ok'] && $usdt > 0 ? ['rate' => round(100000 / $usdt, 4)] : [];
+    });
+    return isset($r['rate']) ? (float)$r['rate'] : null;
+}
+
+/** [naira per USDT when the customer buys, naira per USDT when the customer sells], with our spread. */
+function swap_rates(): ?array
+{
+    $mid = swap_mid_rate();
+    if (!$mid) {
+        return null;
+    }
+    $s = max(0, (float)setting('swap_spread_percent')) / 100;
+    return ['buy' => round($mid * (1 + $s), 2), 'sell' => round($mid * (1 - $s), 2), 'mid' => $mid];
+}
+
+/** USDT we hold in the NOWPayments main balance (what we can sell). */
+function swap_stock(): float
+{
+    $res = np_request('GET', '/balance');
+    $b = $res['body'][SWAP_COIN] ?? null;
+    return $res['ok'] && is_array($b) ? (float)($b['amount'] ?? 0) : 0.0;
+}
+
+/** Naira swapped today by a customer (both directions). */
+function swap_today_ngn(int $userId): float
+{
+    return (float)q_val('SELECT COALESCE(SUM(ngn), 0) FROM crypto_swaps WHERE user_id = ? AND status = "done" AND created_at >= CURDATE()', [$userId]);
+}
+
+function swap_check_limit(int $userId, float $ngn): void
+{
+    $limit = (float)setting('swap_daily_limit_ngn');
+    $used = swap_today_ngn($userId);
+    if ($limit > 0 && $used + $ngn > $limit + 0.009) {
+        throw new UserError('You can swap up to ' . money0($limit) . ' a day. You have ' . money0(max(0, $limit - $used)) . ' left today.');
+    }
+}
+
+/** The customer accepts the rate they were shown, unless the market moved against them by more than 0.5%. */
+function swap_check_rate(float $shown, float $now, bool $buying): void
+{
+    if ($shown <= 0) {
+        return;
+    }
+    $worse = $buying ? $now > $shown * 1.005 : $now < $shown * 0.995;
+    if ($worse) {
+        throw new UserError('The rate has just changed to ' . money($now) . ' per USDT. Please check the new amount and confirm again.');
+    }
+}
+
+/** Naira savings → USDT. Returns the USDT received. */
+function swap_naira_to_usdt(array $u, int $planId, float $ngn, float $shownRate, string $pin): float
+{
+    if (!swap_on()) throw new UserError('Swaps are not available right now.');
+    check_pin($u, $pin);
+    $uid = (int)$u['id'];
+    $ngn = round($ngn, 2);
+    if ($ngn < 1000) throw new UserError('The smallest swap is ' . money0(1000) . '.');
+    $rates = swap_rates();
+    if (!$rates) throw new UserError('We can\'t get a price right now. Please try again in a minute.');
+    swap_check_rate($shownRate, $rates['buy'], true);
+    swap_check_limit($uid, $ngn);
+    $usdt = floor($ngn / $rates['buy'] * 1e6) / 1e6;
+    if ($usdt > swap_stock()) {
+        notify_staff('payments', 'Top up USDT for swaps', 'A customer wanted ' . coin_amount($usdt) . ' USDT but the NOWPayments main balance is too low. Add USDT so swaps keep working.', 'admin/crypto.php');
+        throw new UserError('Swaps to USDT are paused for a moment. Please try a smaller amount or try again later.');
+    }
+    $sub = np_wallet_id($uid);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ? AND status <> "closed" FOR UPDATE', [$planId, $uid]);
+        if (!$plan) throw new UserError('Choose a savings plan.');
+        if (accrue_plan_interest((int)$plan['id']) > 0) {
+            $plan = q_one('SELECT * FROM savings_plans WHERE id = ?', [$plan['id']]);
+        }
+        if ($ngn > (float)$plan['balance'] + 0.009) throw new UserError('You only have ' . money($plan['balance']) . ' in that plan.');
+        $res = np_request('POST', '/sub-partner/deposit', ['currency' => SWAP_COIN, 'amount' => $usdt, 'sub_partner_id' => $sub], 'jwt');
+        if (!$res['ok'] || empty($res['body']['result']['id'])) {
+            throw new UserError('The swap could not be completed. Nothing was taken from your savings. Please try again later.');
+        }
+        q('UPDATE savings_plans SET balance = balance - ? WHERE id = ?', [$ngn, $plan['id']]);
+        q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, note, processed_at) VALUES (?, "swap_out", ?, "swap", "approved", ?, ?, NOW())',
+            [$uid, $ngn, $plan['id'], 'Swapped to ' . coin_amount($usdt) . ' USDT at ' . money($rates['buy']) . '/USDT']);
+        q('INSERT INTO crypto_swaps (user_id, direction, coin, coins, ngn, rate, mid_rate, savings_plan_id, np_ref, status) VALUES (?, "to_crypto", ?, ?, ?, ?, ?, ?, ?, "done")',
+            [$uid, SWAP_COIN, $usdt, $ngn, $rates['buy'], $rates['mid'], $plan['id'], (string)$res['body']['result']['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    unset($_SESSION['crypto_usd']);
+    notify($uid, 'Swap complete', money($ngn) . ' from "' . $plan['name'] . '" was swapped to ' . coin_amount($usdt) . ' USDT at ' . money($rates['buy']) . ' per USDT. It is in your crypto savings now.', 'crypto.php', true);
+    return $usdt;
+}
+
+/** USDT → naira savings. Returns the naira received. */
+function swap_usdt_to_naira(array $u, int $planId, float $usdt, float $shownRate, string $pin): float
+{
+    if (!swap_on()) throw new UserError('Swaps are not available right now.');
+    check_pin($u, $pin);
+    $uid = (int)$u['id'];
+    $usdt = floor($usdt * 1e6) / 1e6;
+    if ($usdt < 1) throw new UserError('The smallest swap is 1 USDT.');
+    $rates = swap_rates();
+    if (!$rates) throw new UserError('We can\'t get a price right now. Please try again in a minute.');
+    swap_check_rate($shownRate, $rates['sell'], false);
+    $ngn = round($usdt * $rates['sell'], 2);
+    swap_check_limit($uid, $ngn);
+    $plan = q_one('SELECT * FROM savings_plans WHERE id = ? AND user_id = ? AND status = "active"', [$planId, $uid]);
+    if (!$plan) throw new UserError('Choose a savings plan for the naira.');
+    $available = crypto_available($uid, SWAP_COIN, crypto_balances($uid));
+    if ($usdt > $available + 1e-9) throw new UserError('You have ' . coin_amount($available) . ' USDT available to swap.');
+    $res = np_request('POST', '/sub-partner/write-off', ['currency' => SWAP_COIN, 'amount' => $usdt, 'sub_partner_id' => np_wallet_id($uid)], 'jwt');
+    if (!$res['ok'] || empty($res['body']['result']['id'])) {
+        throw new UserError('The swap could not be completed. Your USDT was not touched. Please try again later.');
+    }
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        accrue_plan_interest((int)$plan['id']);
+        q('UPDATE savings_plans SET balance = balance + ? WHERE id = ?', [$ngn, $plan['id']]);
+        if ($plan['interest_accrued_on'] === null) {
+            q('UPDATE savings_plans SET interest_accrued_on = CURDATE() WHERE id = ?', [$plan['id']]);
+        }
+        q('INSERT INTO transactions (user_id, type, amount, method, status, savings_plan_id, note, processed_at) VALUES (?, "swap_in", ?, "swap", "approved", ?, ?, NOW())',
+            [$uid, $ngn, $plan['id'], 'Swapped from ' . coin_amount($usdt) . ' USDT at ' . money($rates['sell']) . '/USDT']);
+        q('INSERT INTO crypto_swaps (user_id, direction, coin, coins, ngn, rate, mid_rate, savings_plan_id, np_ref, status) VALUES (?, "to_naira", ?, ?, ?, ?, ?, ?, ?, "done")',
+            [$uid, SWAP_COIN, $usdt, $ngn, $rates['sell'], $rates['mid'], $plan['id'], (string)$res['body']['result']['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        error_log('[lucapetloan] swap to naira: coins moved but savings not credited for user ' . $uid . ': ' . $e->getMessage());
+        notify_staff('payments', 'Swap needs fixing', 'USDT was taken from a customer for a swap, but their savings were not credited (' . money($ngn) . '). Credit it manually.', 'admin/crypto.php');
+        throw new UserError('Something went wrong. Our team has been told and will fix your balance shortly.');
+    }
+    unset($_SESSION['crypto_usd']);
+    notify($uid, 'Swap complete', coin_amount($usdt) . ' USDT was swapped to ' . money($ngn) . ' at ' . money($rates['sell']) . ' per USDT, and added to "' . $plan['name'] . '".', 'savings.php', true);
+    return $ngn;
+}
+
 /* ---------- Live market (public prices from CoinGecko; no key, cached on the server) ---------- */
 
 /** CoinGecko id for a coin code; several networks of one coin share an id. '' when unknown. */

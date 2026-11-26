@@ -85,10 +85,11 @@ if (is_post()) {
                 $changed[] = 'mode → ' . strtoupper($mode);
                 notify_staff('payments', 'NOWPayments switched to ' . strtoupper($mode), $mode === 'live' ? 'Crypto deposits are now real.' : 'Crypto now uses the sandbox; nothing is real.', 'admin/crypto.php');
             }
-            foreach (['crypto_auto_payouts' => (int)(bool)post('crypto_auto_payouts'), 'crypto_auto_daily_usd' => max(0, (float)post('crypto_auto_daily_usd'))] as $k => $val) {
-                if (($k === 'crypto_auto_daily_usd' && post($k) === '') || $val == setting($k)) continue;
+            foreach (['crypto_auto_payouts' => (int)(bool)post('crypto_auto_payouts'), 'crypto_auto_daily_usd' => max(0, (float)post('crypto_auto_daily_usd')),
+                      'swap_enabled' => (int)(bool)post('swap_enabled'), 'swap_spread_percent' => min(20, max(0, (float)post('swap_spread_percent'))), 'swap_daily_limit_ngn' => max(0, (int)post('swap_daily_limit_ngn'))] as $k => $val) {
+                if ((in_array($k, ['crypto_auto_daily_usd', 'swap_spread_percent', 'swap_daily_limit_ngn'], true) && post($k) === '') || $val == setting($k)) continue;
                 save_setting($k, $val);
-                $changed[] = $k === 'crypto_auto_payouts' ? 'automatic crypto payouts ' . ($val ? 'on' : 'off') : 'automatic limit $' . $val;
+                $changed[] = $k . ' → ' . $val;
             }
             $on = post('crypto_savings') ? 1 : 0;
             if ($on !== setting('crypto_savings')) {
@@ -228,6 +229,11 @@ app_header('Integrations', 'integrations', 'admin');
     <div class="form-grid">
       <label class="check"><input type="checkbox" name="crypto_auto_payouts" value="1" <?= setting('crypto_auto_payouts') ? 'checked' : '' ?>><span>Send crypto withdrawals automatically <span class="hint">needs the 2FA secret key</span></span></label>
       <label>Automatic limit per customer per day (US$)<input type="number" name="crypto_auto_daily_usd" min="0" step="10" value="<?= setting('crypto_auto_daily_usd') ?>"></label>
+    </div>
+    <div class="form-grid">
+      <label class="check"><input type="checkbox" name="swap_enabled" value="1" <?= setting('swap_enabled') ? 'checked' : '' ?>><span>Naira ⇄ USDT swaps <span class="hint">you sell from your NOWPayments main balance</span></span></label>
+      <label>Swap spread %<input type="number" name="swap_spread_percent" min="0" max="20" step="0.1" value="<?= setting('swap_spread_percent') ?>"></label>
+      <label>Swap limit per customer per day (₦)<input type="number" name="swap_daily_limit_ngn" min="0" step="10000" value="<?= setting('swap_daily_limit_ngn') ?>"></label>
     </div>
     <p class="small muted" style="margin:0"><strong>For automatic payouts:</strong> in NOWPayments turn on 2-step sign-in with an <em>authenticator app</em> and paste the <strong>secret key</strong> it shows here; and under Settings → Whitelist switch off <em>wallet address</em> whitelisting (keep the IP whitelist on). The first withdrawal to a new address and anything over the daily limit still wait for staff in Admin → Crypto.</p>
     <p class="small muted" style="margin:0">In the NOWPayments dashboard: <strong>Settings → Payments → API keys</strong> for the API key; <strong>Instant payment notifications</strong> for the IPN secret (the address is set per deposit automatically: <code><?= e(absolute_url('np_webhook.php')) ?></code>); <strong>Settings → Coins</strong> to choose which coins customers can save in. Customer wallets need the <strong>Custody</strong> feature: ask NOWPayments support to switch it on. The email and password are the ones you sign in to NOWPayments with (needed to open wallets and move coins for withdrawals).</p>

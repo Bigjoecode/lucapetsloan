@@ -392,6 +392,23 @@ return [
   CONSTRAINT fk_cwal_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
+"CREATE TABLE IF NOT EXISTS crypto_swaps (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  direction ENUM('to_crypto','to_naira') NOT NULL,
+  coin VARCHAR(30) NOT NULL,
+  coins DECIMAL(30,10) NOT NULL,
+  ngn DECIMAL(14,2) NOT NULL,
+  rate DECIMAL(14,4) NOT NULL COMMENT 'naira per coin given to the customer',
+  mid_rate DECIMAL(14,4) NOT NULL COMMENT 'market rate at the time',
+  savings_plan_id INT UNSIGNED NULL,
+  np_ref VARCHAR(40) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'done',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_swap_user (user_id, created_at),
+  CONSTRAINT fk_swap_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
 "CREATE TABLE IF NOT EXISTS crypto_withdrawals (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL,

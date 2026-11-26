@@ -104,6 +104,23 @@ app_header('Crypto', 'crypto', 'admin');
   <?php endif; ?>
 </div>
 
+<?php if (swap_on()):
+    $swaps = q('SELECT s.*, u.full_name FROM crypto_swaps s JOIN users u ON u.id = s.user_id ORDER BY s.id DESC LIMIT 20')->fetchAll();
+    $stock = swap_stock();
+    $sr = swap_rates();
+    $today = q_one('SELECT COALESCE(SUM(CASE WHEN direction = "to_crypto" THEN coins END), 0) sold, COALESCE(SUM(CASE WHEN direction = "to_naira" THEN coins END), 0) bought, COALESCE(SUM(ABS(ngn - coins * mid_rate)), 0) margin FROM crypto_swaps WHERE status = "done" AND created_at >= CURDATE()');
+?>
+<div class="card">
+  <div class="card-head"><h2>Naira ⇄ USDT swaps</h2><span class="badge badge-<?= $stock > 50 ? 'ok' : 'warn' ?>">USDT in stock: <?= e(coin_amount($stock)) ?></span></div>
+  <p class="small muted" style="margin-top:0"><?= $sr ? 'Market ' . money($sr['mid']) . ' · customers buy at ' . money($sr['buy']) . ' and sell at ' . money($sr['sell']) . ' per USDT.' : 'No price available right now.' ?> Today: sold <?= e(coin_amount($today['sold'])) ?> USDT, bought <?= e(coin_amount($today['bought'])) ?> USDT, margin about <?= money0($today['margin']) ?>. Keep enough USDT in your NOWPayments main balance for customers to buy.</p>
+  <?php if ($swaps): ?>
+  <ul class="list"><?php foreach ($swaps as $sw): ?>
+    <li><div class="grow"><div class="title"><?= e($sw['full_name']) ?> · <?= $sw['direction'] === 'to_crypto' ? money0($sw['ngn']) . ' → ' . e(coin_amount($sw['coins'])) . ' USDT' : e(coin_amount($sw['coins'])) . ' USDT → ' . money0($sw['ngn']) ?></div><div class="sub"><?= e(fdatetime($sw['created_at'])) ?> · rate <?= money($sw['rate']) ?> (market <?= money($sw['mid_rate']) ?>)</div></div></li>
+  <?php endforeach; ?></ul>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <div class="grid grid-2" style="align-items:start">
   <div class="card">
     <h2>Recent deposits</h2>

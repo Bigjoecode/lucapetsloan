@@ -64,7 +64,7 @@ function brand_mark(): string
 /** One transaction as a list item. */
 function tx_row(array $t, bool $showUser = false): string
 {
-    $in = in_array($t['type'], ['deposit', 'loan_disbursement', 'interest', 'bonus', 'ajo_payout'], true);
+    $in = in_array($t['type'], ['deposit', 'loan_disbursement', 'interest', 'bonus', 'ajo_payout', 'swap_in'], true);
     [$cls, $ic] = match ($t['type']) {
         'deposit'           => ['tx-in', 'down'],
         'interest'          => ['tx-in', 'chart'],
@@ -75,7 +75,7 @@ function tx_row(array $t, bool $showUser = false): string
         'loan_disbursement' => ['tx-loan', 'loan'],
         default             => ['tx-loan', 'check'],
     };
-    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment', 'interest' => 'Savings interest', 'bonus' => 'Referral bonus', 'ajo_contribution' => 'Group savings contribution', 'ajo_payout' => 'Group savings pot'];
+    $titles = ['deposit' => 'Savings deposit', 'withdrawal' => 'Withdrawal', 'loan_disbursement' => 'Loan paid out', 'loan_repayment' => 'Loan repayment', 'interest' => 'Savings interest', 'bonus' => 'Referral bonus', 'ajo_contribution' => 'Group savings contribution', 'ajo_payout' => 'Group savings pot', 'swap_in' => 'Swapped from USDT', 'swap_out' => 'Swapped to USDT'];
     $sub = fdatetime($t['created_at']) . ' · ' . (in_array($t['type'], ['interest', 'bonus', 'ajo_contribution', 'ajo_payout'], true) ? ($t['note'] ?? '') : (payment_methods()[$t['method']] ?? label($t['method'])));
     if ($showUser && isset($t['full_name'])) {
         $sub = e($t['full_name']) . ' · ' . $sub;
