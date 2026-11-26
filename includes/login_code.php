@@ -2,15 +2,13 @@
 declare(strict_types=1);
 
 /*
- * Email sign-in codes: password → 6-digit code by email → PIN.
- * A device can be remembered for 30 days so the code isn't asked for every time there.
- * If email can't be sent, sign-in continues to the PIN step so nobody is locked out.
+ * Email sign-in codes: password → 6-digit code by email → PIN, at every sign-in for everyone.
+ * (Staff with an authenticator app: password → email code → authenticator code.)
+ * If email can't be sent, sign-in continues to the next step so nobody is locked out.
  */
 
 const LOGIN_CODE_MINUTES = 10;
 const LOGIN_CODE_TRIES = 5;
-const TRUSTED_DEVICE_DAYS = 30;
-const TRUSTED_COOKIE = 'lpl_td';
 
 function login_codes_on(): bool
 {
@@ -22,24 +20,6 @@ function mask_email(string $email): string
 {
     [$name, $domain] = array_pad(explode('@', $email, 2), 2, '');
     return mb_substr($name, 0, 1) . str_repeat('*', max(3, min(6, mb_strlen($name) - 1))) . '@' . $domain;
-}
-
-/** Is this browser remembered for the user? */
-function device_trusted(int $userId): bool
-{
-    $token = (string)($_COOKIE[TRUSTED_COOKIE] ?? '');
-    if (strlen($token) !== 64 || !ctype_xdigit($token)) {
-        return false;
-    }
-    return (bool)q_val('SELECT 1 FROM trusted_devices WHERE user_id = ? AND token_hash = ? AND expires_at > NOW()', [$userId, hash('sha256', $token)]);
-}
-
-function trust_device(int $userId): void
-{
-    $token = bin2hex(random_bytes(32));
-    q('INSERT INTO trusted_devices (user_id, token_hash, label, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))',
-        [$userId, hash('sha256', $token), mb_substr(device_name((string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 80), TRUSTED_DEVICE_DAYS]);
-    setcookie(TRUSTED_COOKIE, $token, ['expires' => time() + TRUSTED_DEVICE_DAYS * 86400, 'path' => (BASE_URL ?: '/'), 'secure' => is_https(), 'httponly' => true, 'samesite' => 'Lax']);
 }
 
 /** Forget every remembered device (after a password reset or change). */
@@ -103,13 +83,7 @@ function check_login_code(int $userId, string $code): string
  */
 function after_password(array $user): string
 {
-    if (is_staff($user) && $user['totp_enabled']) {
-        session_regenerate_id(true);
-        $_SESSION['2fa_uid'] = (int)$user['id'];
-        $_SESSION['2fa_at'] = time();
-        return 'login_2fa.php';
-    }
-    if (login_codes_on() && !device_trusted((int)$user['id'])) {
+    if (login_codes_on()) {   // every sign-in, on every device
         $sent = send_login_code($user);
         if ($sent === '' || $sent !== 'send-failed') {
             session_regenerate_id(true);
@@ -125,9 +99,15 @@ function after_password(array $user): string
     return after_email_code($user);
 }
 
-/** After the email code (or when it isn't needed): the PIN, or straight in for accounts without one yet. */
+/** After the email code: the authenticator (staff who use one), the PIN, or straight in for accounts without a PIN yet. */
 function after_email_code(array $user): string
 {
+    if (is_staff($user) && $user['totp_enabled']) {
+        session_regenerate_id(true);
+        $_SESSION['2fa_uid'] = (int)$user['id'];
+        $_SESSION['2fa_at'] = time();
+        return 'login_2fa.php';
+    }
     if (has_pin($user)) {
         session_regenerate_id(true);
         $_SESSION['pin_uid'] = (int)$user['id'];

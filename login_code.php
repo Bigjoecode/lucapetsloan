@@ -32,9 +32,6 @@ if (is_post()) {
     $error = check_login_code((int)$user['id'], preg_replace('/\D/', '', (string)post('code')));
     if ($error === '') {
         unset($_SESSION['code_uid'], $_SESSION['code_at']);
-        if (post('trust')) {
-            trust_device((int)$user['id']);
-        }
         redirect(after_email_code($user));
     }
 }
@@ -50,7 +47,6 @@ public_header('Check your email');
     <form method="post" class="form">
       <?= csrf_field() ?>
       <label>Code from your email<input name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required autofocus class="pin-input" placeholder="••••••"></label>
-      <label class="check"><input type="checkbox" name="trust" value="1"><span class="small">Don't ask for a code on this device for <?= TRUSTED_DEVICE_DAYS ?> days</span></label>
       <button class="btn btn-primary btn-block">Continue</button>
     </form>
     <form method="post" style="margin-top:.8rem;text-align:center"><?= csrf_field() ?><input type="hidden" name="action" value="resend"><button class="btn btn-ghost btn-sm">Send a new code</button></form>
