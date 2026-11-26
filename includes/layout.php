@@ -42,9 +42,23 @@ function icon(string $name, int $size = 20): string
     return '<svg class="ic" width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $p . '</svg>';
 }
 
+/** The LucaPet Loan logo (LP monogram with a gold coin), as inline SVG. */
+function logo_svg(int $size = 36): string
+{
+    static $n = 0;
+    $n++;   // unique gradient ids when the logo appears more than once on a page
+    return '<svg class="logo" width="' . $size . '" height="' . $size . '" viewBox="0 0 64 64" aria-hidden="true">'
+        . '<defs><linearGradient id="lbg' . $n . '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e7a55"/><stop offset="1" stop-color="#0b4f3c"/></linearGradient>'
+        . '<linearGradient id="lgd' . $n . '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbd77e"/><stop offset="1" stop-color="#e9a923"/></linearGradient></defs>'
+        . '<rect width="64" height="64" rx="15" fill="url(#lbg' . $n . ')"/>'
+        . '<path d="M17 13 V47 H33" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'
+        . '<path d="M27 51 V18" fill="none" stroke="#6ee7b7" stroke-width="7" stroke-linecap="round"/>'
+        . '<circle cx="37" cy="26" r="11" fill="url(#lgd' . $n . ')"/><circle cx="37" cy="26" r="4.2" fill="#0b4f3c"/></svg>';
+}
+
 function brand_mark(): string
 {
-    return '<span class="brand-mark">' . icon('cash', 18) . '</span><span class="brand-name">' . e(APP_NAME) . '</span>';
+    return '<span class="brand-mark">' . logo_svg(36) . '</span><span class="brand-name">' . e(APP_NAME) . '</span>';
 }
 
 /** One transaction as a list item. */
@@ -118,15 +132,17 @@ function html_head(string $title, array $extraCss = [], ?string $theme = null): 
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="<?= $theme === 'dark' ? '#08120e' : '#0b4f3c' ?>">
 <link rel="manifest" href="<?= url('manifest.php') ?>">
-<link rel="icon" type="image/png" sizes="192x192" href="<?= url('assets/icons/icon-192.png') ?>">
-<link rel="apple-touch-icon" href="<?= url('assets/icons/apple-touch-icon.png') ?>">
+<link rel="icon" type="image/svg+xml" href="<?= url('assets/icons/logo.svg') ?>?v=2">
+<link rel="icon" type="image/png" sizes="32x32" href="<?= url('assets/icons/favicon-32.png') ?>?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="<?= url('assets/icons/icon-192.png') ?>?v=2">
+<link rel="apple-touch-icon" href="<?= url('assets/icons/apple-touch-icon.png') ?>?v=2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= e($title) ?> · <?= e(APP_NAME) ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=9">
+<link rel="stylesheet" href="<?= url('assets/css/style.css') ?>?v=10">
 <?php foreach ($extraCss as $css): ?><link rel="stylesheet" href="<?= url('assets/css/' . $css) ?>?v=1">
 <?php endforeach; ?>
 </head>

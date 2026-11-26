@@ -598,3 +598,8 @@ html[data-theme="dark"] .coin-card { background: linear-gradient(180deg, var(--s
 .mk-px { display: grid; justify-items: end; min-width: 92px; font-variant-numeric: tabular-nums; }
 @media (max-width: 1100px) { .market { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .spark { width: 64px; } .mk-px { min-width: 80px; } .mk-big { font-size: 1.6rem; } }
+
+/* Logo: LP monogram (inline SVG) */
+.brand-mark { width: 36px; height: 36px; border-radius: 10px; background: none; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(11, 79, 60, .28); }
+.brand-mark .logo { display: block; width: 36px; height: 36px; }
+.sidebar .brand-mark { box-shadow: 0 6px 18px rgba(0, 0, 0, .3); }

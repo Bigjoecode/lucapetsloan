@@ -31,7 +31,8 @@ function email_html(string $title, string $body, string $link = '', string $butt
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f2;padding:24px 12px"><tr><td align="center">'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:18px;overflow:hidden">'
         . '<tr><td style="background:linear-gradient(125deg,#0b4f3c,#12a06f);background-color:#0b4f3c;padding:20px 26px;color:#ffffff;font-size:18px;font-weight:800">'
-        . '<span style="display:inline-block;background:#f2b33d;color:#2b1d00;border-radius:9px;width:30px;height:30px;line-height:30px;text-align:center;margin-right:8px">₦</span>' . e(APP_NAME) . '</td></tr>'
+        . '<img src="' . e(absolute_url('assets/icons/logo-64.png')) . '" width="32" height="32" alt="" style="display:inline-block;vertical-align:middle;border:0;border-radius:8px;margin-right:10px">'
+        . '<span style="vertical-align:middle">' . e(APP_NAME) . '</span>' . '</td></tr>'
         . '<tr><td style="padding:26px">'
         . '<h1 style="margin:0 0 14px;font-size:20px;color:#13201b">' . e($title) . '</h1>' . $paras . $btn
         . '</td></tr>'

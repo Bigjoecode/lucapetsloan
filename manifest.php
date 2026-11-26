@@ -16,12 +16,12 @@ echo json_encode([
     'background_color' => '#0b4f3c',
     'theme_color'      => '#0b4f3c',
     'icons'            => [
-        ['src' => url('assets/icons/icon-192.png'), 'sizes' => '192x192', 'type' => 'image/png'],
-        ['src' => url('assets/icons/icon-512.png'), 'sizes' => '512x512', 'type' => 'image/png'],
-        ['src' => url('assets/icons/maskable-512.png'), 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ['src' => url('assets/icons/icon-192.png') . '?v=2', 'sizes' => '192x192', 'type' => 'image/png'],
+        ['src' => url('assets/icons/icon-512.png') . '?v=2', 'sizes' => '512x512', 'type' => 'image/png'],
+        ['src' => url('assets/icons/maskable-512.png') . '?v=2', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
     ],
     'shortcuts'        => [
-        ['name' => 'Save today', 'url' => url('savings.php'), 'icons' => [['src' => url('assets/icons/icon-192.png'), 'sizes' => '192x192']]],
-        ['name' => 'My loan', 'url' => url('loans.php'), 'icons' => [['src' => url('assets/icons/icon-192.png'), 'sizes' => '192x192']]],
+        ['name' => 'Save today', 'url' => url('savings.php'), 'icons' => [['src' => url('assets/icons/icon-192.png') . '?v=2', 'sizes' => '192x192']]],
+        ['name' => 'My loan', 'url' => url('loans.php'), 'icons' => [['src' => url('assets/icons/icon-192.png') . '?v=2', 'sizes' => '192x192']]],
     ],
 ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);

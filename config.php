@@ -96,6 +96,7 @@ const SETTING_DEFAULTS = [
     'prembly_bvn_path'     => '/verification/bvn_validation',
     'prembly_nin_path'     => '/verification/vnin-basic',
     'dual_approval_amount' => 200000,   // loans this size or bigger need two staff approvals (0 = off)
+    'site_url'             => '',       // remembered from visits; used for links in emails sent by the daily job
     'login_email_code'     => 1,        // email a 6-digit code at sign-in, before the PIN
     'require_staff_2fa'    => 0,        // staff must use an authenticator app to sign in
     'referral_bonus'       => 500,      // paid into the inviter's savings (0 = off)

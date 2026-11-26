@@ -1195,8 +1195,29 @@ function find_reset(string $token): ?array
 /** Absolute link, for emails and links shared outside the app. */
 function absolute_url(string $path): string
 {
-    $host = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $host = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        // Daily job on the command line: use the address the site was last visited at.
+        $site = (string)(env('APP_URL') ?: setting('site_url'));
+        if ($site !== '') {
+            return rtrim($site, '/') . url($path);
+        }
+        $host = 'localhost';
+    }
     return (is_https() ? 'https://' : 'http://') . $host . url($path);
+}
+
+/** Remember this site's public address (scheme + host) so command-line jobs can build links. */
+function remember_site_url(): void
+{
+    $host = strtolower((string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '' || preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/', $host) || !preg_match('/^[a-z0-9.-]+(:\d+)?$/', $host)) {
+        return;
+    }
+    $site = (is_https() ? 'https://' : 'http://') . $host;
+    if (setting('site_url') !== $site) {
+        save_setting('site_url', $site);
+    }
 }
 
 /** True when emails can be sent: a hosting mailbox (SMTP) or a Resend key is set up under Integrations. */

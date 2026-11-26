@@ -53,4 +53,8 @@ if (!defined('SKIP_INSTALL_CHECK') && !app_installed()) {
 }
 if (!defined('SKIP_INSTALL_CHECK')) {
     ensure_schema();
+    try {
+        remember_site_url();
+    } catch (PDOException) {
+    }
 }

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LucaPet Loan">
+  <defs>
+    <linearGradient id="lplBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e7a55"/><stop offset="1" stop-color="#0b4f3c"/></linearGradient>
+    <linearGradient id="lplGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbd77e"/><stop offset="1" stop-color="#e9a923"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#lplBg)"/>
+  <path d="M17 13 V47 H33" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 51 V18" fill="none" stroke="#6ee7b7" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="37" cy="26" r="11" fill="url(#lplGold)"/>
+  <circle cx="37" cy="26" r="4.2" fill="#0b4f3c"/>
+</svg>
