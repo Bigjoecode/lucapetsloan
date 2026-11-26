@@ -162,6 +162,9 @@ function integration_test(string $service): string
             if (!mail_enabled()) return 'Email: add your mailbox details (or a Resend key) first.';
             $to = (string)$GLOBALS['me']['email'];
             $ok = send_mail($to, 'Test email · ' . APP_NAME, email_html('Email is working 🎉', "This is a test from " . APP_NAME . ".\n\nCustomers will now get their approvals, payments, reminders and password resets by email.", absolute_url('dashboard.php'), 'Open ' . APP_NAME));
+            if ($ok && ($GLOBALS['mail_fallback'] ?? '') !== '') {
+                return 'Test email sent to ' . $to . ' via the server\'s built-in mail, because your mailbox was refused (' . $GLOBALS['mail_fallback'] . '). Emails keep working this way; to stop this message, tick "Send with the server\'s built-in mail" or fix the mailbox password.';
+            }
             return $ok ? 'Test email sent to ' . $to . ' via ' . ['server' => 'the server\'s built-in mail (from ' . smtp_user() . ')', 'mailbox' => 'your mailbox (' . smtp_user() . ' on ' . smtp_host() . ':' . smtp_port() . ')', 'resend' => 'Resend'][mail_method()] . '. Check the inbox (and spam folder).' : 'Email not sent · ' . mail_last_error();
     }
 }

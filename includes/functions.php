@@ -1251,11 +1251,23 @@ function send_mail(string $to, string $subject, string $html): bool
         $GLOBALS['mail_last_error'] = 'No email service is set up.';
         return false;
     }
+    $GLOBALS['mail_fallback'] = '';
     $ok = match (mail_method()) {
         'server'  => server_mail_send($to, $subject, $html),
         'mailbox' => smtp_send($to, $subject, $html),
         default   => resend_send($to, $subject, $html),
     };
+    if (!$ok && mail_method() === 'mailbox' && function_exists('mail')) {
+        // The mailbox refused (e.g. its password changed): send with the server's built-in mail instead
+        // so sign-in codes and alerts keep arriving. The reason stays visible to admins.
+        $why = mail_last_error();
+        if (server_mail_send($to, $subject, $html)) {
+            $GLOBALS['mail_fallback'] = $why;
+            error_log('[lucapetloan] email to ' . $to . ' sent with server mail because the mailbox failed: ' . $why);
+            return true;
+        }
+        $GLOBALS['mail_last_error'] = $why . ' · server mail also failed';
+    }
     if (!$ok) {
         error_log('[lucapetloan] email to ' . $to . ' failed: ' . mail_last_error());
     }
