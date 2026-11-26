@@ -549,7 +549,7 @@ function store_upload(string $field, int $userId): ?string
 }
 
 /** Bump when schema.php or the migrations change: live sites then upgrade themselves on the next visit. */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 function ensure_schema(): void
 {
@@ -630,7 +630,12 @@ function run_schema(): array
         'ALTER TABLE loans ADD COLUMN collateral_sold_at DATETIME NULL',
         'ALTER TABLE loans ADD COLUMN collateral_sale_amount DECIMAL(14,2) NULL',
         'ALTER TABLE loans ADD COLUMN collateral_note VARCHAR(255) NULL',
-        'ALTER TABLE notifications MODIFY body TEXT NOT NULL',   // longer messages (collateral notices, sign-in alerts)
+        'ALTER TABLE notifications MODIFY body TEXT NOT NULL',
+        'ALTER TABLE users ADD COLUMN payout_bank_code VARCHAR(20) NULL',
+        'ALTER TABLE users ADD COLUMN payout_bank_name VARCHAR(120) NULL',
+        'ALTER TABLE users ADD COLUMN payout_account_number VARCHAR(20) NULL',
+        'ALTER TABLE users ADD COLUMN payout_account_name VARCHAR(160) NULL',
+        'ALTER TABLE users ADD COLUMN payout_set_at DATETIME NULL',   // longer messages (collateral notices, sign-in alerts)
         'ALTER TABLE users ADD COLUMN np_sub_id VARCHAR(30) NULL',
     ];
     foreach ($migrations as $sql) {
@@ -1403,6 +1408,88 @@ function server_mail_send(string $to, string $subject, string $html): bool
         $GLOBALS['mail_last_error'] = 'Server mail: the server would not accept the message' . ($err ? ' (' . $err['message'] . ')' : '') . '. Ask your host whether PHP mail is allowed, or use the mailbox password instead.';
     }
     return $ok;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Payout bank account (where withdrawals and loans are sent)         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The bank's account name must belong to the customer: at least two of their names
+ * (first name and surname, in any order) must appear in it; one if they gave only one name.
+ */
+function payout_name_matches(string $bankName, string $fullName): bool
+{
+    $words = fn(string $s) => array_values(array_unique(array_filter(preg_split('/[^a-z]+/', strtolower($s)) ?: [], fn($w) => strlen($w) >= 2)));
+    $mine = $words($fullName);
+    $common = array_intersect($mine, $words($bankName));
+    return count($common) >= min(2, count($mine)) && count($common) > 0;
+}
+
+/**
+ * The customer's payout account, or null. Bank details given earlier in the verification
+ * form are adopted (and locked) the first time they are needed.
+ */
+function payout_account(int $userId): ?array
+{
+    $u = q_one('SELECT payout_bank_code, payout_bank_name, payout_account_number, payout_account_name FROM users WHERE id = ?', [$userId]);
+    if ($u && $u['payout_account_number']) {
+        return ['bank_code' => $u['payout_bank_code'], 'bank_name' => $u['payout_bank_name'], 'account_number' => $u['payout_account_number'], 'account_name' => $u['payout_account_name']];
+    }
+    // Only details picked from the bank list (with a bank code) are adopted; typed-in ones must be added and checked again.
+    $k = q_one('SELECT bank_code, bank_name, account_number, account_name FROM kyc WHERE user_id = ? AND account_number <> "" AND bank_code IS NOT NULL AND bank_code <> ""', [$userId]);
+    if (!$k) {
+        return null;
+    }
+    q('UPDATE users SET payout_bank_code = ?, payout_bank_name = ?, payout_account_number = ?, payout_account_name = ?, payout_set_at = NOW() WHERE id = ? AND payout_account_number IS NULL',
+        [$k['bank_code'], $k['bank_name'], $k['account_number'], $k['account_name'], $userId]);
+    return $k;
+}
+
+/** Look the account up with the bank (through Flutterwave) and check it is in the customer's name. Returns the bank's account name. */
+function confirm_payout_account(array $u, string $bankCode, string $number): string
+{
+    $banks = flw_configured() ? flw_banks() : [];
+    if (!$banks) {
+        throw new UserError('We can\'t check bank accounts right now. Please try again later or call ' . SUPPORT_PHONE . '.');
+    }
+    if (!isset($banks[$bankCode]) || !preg_match('/^\d{10}$/', $number)) {
+        throw new UserError('Choose your bank and enter your 10-digit account number.');
+    }
+    $name = flw_resolve_account($number, $bankCode);
+    if (!$name) {
+        throw new UserError('We couldn\'t find that account. Check the account number and the bank.');
+    }
+    if (!payout_name_matches($name, $u['full_name'])) {
+        throw new UserError('That account is in the name of ' . $name . '. Withdrawals can only go to an account in your own name (' . $u['full_name'] . ').');
+    }
+    return $name;
+}
+
+/** Save the payout account. It can only be set once; afterwards only a super admin can reset it. */
+function save_payout_account(array $u, string $bankCode, string $bankName, string $number, string $accountName): void
+{
+    $n = q('UPDATE users SET payout_bank_code = ?, payout_bank_name = ?, payout_account_number = ?, payout_account_name = ?, payout_set_at = NOW() WHERE id = ? AND payout_account_number IS NULL',
+        [$bankCode, $bankName, $number, $accountName, $u['id']])->rowCount();
+    if (!$n) {
+        throw new UserError('Your payout account is already set and can\'t be changed. Call ' . SUPPORT_PHONE . ' if it is wrong.');
+    }
+    q('UPDATE kyc SET bank_code = ?, bank_name = ?, account_number = ?, account_name = ? WHERE user_id = ?', [$bankCode, $bankName, $number, $accountName, $u['id']]);
+    audit('customer.payout_account', 'Customer #' . $u['id'], $bankName . ' ' . $number . ' (' . $accountName . ')', (int)$u['id']);
+    notify((int)$u['id'], 'Payout account added', 'Withdrawals will be sent to ' . $bankName . ' ' . $number . ' (' . $accountName . '). For your safety this account can\'t be changed in the app. If this was not you, call ' . SUPPORT_PHONE . ' right away.', 'savings.php', true);
+}
+
+/** Customer adds their account (PIN required). */
+function add_payout_account(array $u, string $bankCode, string $number, string $pin): array
+{
+    check_pin($u, $pin);
+    if (payout_account((int)$u['id'])) {
+        throw new UserError('Your payout account is already set and can\'t be changed. Call ' . SUPPORT_PHONE . ' if it is wrong.');
+    }
+    $name = confirm_payout_account($u, $bankCode, $number);
+    $bankName = flw_banks()[$bankCode];
+    save_payout_account($u, $bankCode, $bankName, $number, $name);
+    return ['bank_code' => $bankCode, 'bank_name' => $bankName, 'account_number' => $number, 'account_name' => $name];
 }
 
 /* ------------------------------------------------------------------ */

@@ -184,9 +184,9 @@ function flw_send_withdrawal(int $txId, ?int $staffId): string
     if (!$tx || $tx['status'] !== 'pending') {
         throw new UserError('That withdrawal has already been processed.');
     }
-    $kyc = q_one('SELECT bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$tx['user_id']]);
+    $kyc = payout_account((int)$tx['user_id']);
     if (!$kyc || empty($kyc['bank_code'])) {
-        throw new UserError('The customer has no payout bank selected. Ask them to choose their bank under Profile → Payout account, or pay manually.');
+        throw new UserError('The customer has no payout bank account on file. Ask them to add it under Savings → Withdraw, or pay manually.');
     }
     // Claim the row first so a double click can't send the money twice.
     $ref = flw_reference('LPL-WD');
@@ -248,9 +248,9 @@ function flw_send_loan(int $loanId, ?int $staffId): string
     if (q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status IN ("processing","approved")', [$loanId])) {
         throw new UserError('This loan has already been sent.');
     }
-    $kyc = q_one('SELECT bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$loan['user_id']]);
+    $kyc = payout_account((int)$loan['user_id']);
     if (!$kyc || empty($kyc['bank_code'])) {
-        throw new UserError('The customer has no payout bank selected, so the loan has to be paid manually.');
+        throw new UserError('The customer has no payout bank account on file, so the loan has to be paid manually.');
     }
     $ref = flw_reference('LPL-LN');
     q('INSERT INTO transactions (user_id, type, amount, method, reference, status, loan_id, note, processed_by) VALUES (?, "loan_disbursement", ?, "flutterwave", ?, "processing", ?, ?, ?)',

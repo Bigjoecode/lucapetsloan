@@ -16,6 +16,7 @@ $fields = [
 $optional = ['latitude', 'longitude', 'visit_instructions', 'bank_code'];
 // With Flutterwave the customer picks their bank from a list, so payouts know the bank code.
 $banks = flw_configured() ? flw_banks() : [];
+$locked = payout_account($uid);   // once saved, the payout account can't be changed here
 const VISIT_TIMES = ['Morning (8am–12pm)', 'Afternoon (12pm–4pm)', 'Evening (4pm–6pm)'];
 $errors = [];
 
@@ -28,7 +29,12 @@ if (is_post() && $editable) {
             $errors[$f] = label($f) . ' is required.';
         }
     }
-    if ($banks) {
+    if ($locked) {
+        foreach (['bank_code', 'bank_name', 'account_number', 'account_name'] as $f) {
+            $data[$f] = (string)$locked[$f];
+            unset($errors[$f]);
+        }
+    } elseif ($banks) {
         unset($errors['bank_name']);
         if (isset($banks[$data['bank_code']])) {
             $data['bank_name'] = $banks[$data['bank_code']];
@@ -53,6 +59,17 @@ if (is_post() && $editable) {
     $data['longitude'] = is_numeric($data['longitude']) ? $data['longitude'] : null;
     $data['years_at_address'] = min(99, max(0, (int)$data['years_at_address']));
     if (!post('consent')) $errors['consent'] = 'Please agree to the physical verification visit.';
+    // A new bank account must be in the customer's own name: check it with the bank before saving.
+    $newPayout = false;
+    if (!$locked && $banks && !isset($errors['bank_name']) && !isset($errors['account_number'])) {
+        try {
+            $data['account_name'] = confirm_payout_account($u, (string)$data['bank_code'], (string)$data['account_number']);
+            unset($errors['account_name']);
+            $newPayout = true;
+        } catch (UserError $e) {
+            $errors['account_number'] = $e->getMessage();
+        }
+    }
 
     // Check the BVN and NIN belong to this person before booking a visit (only when new or changed).
     if (!$errors && prembly_on()) {
@@ -107,6 +124,12 @@ if (is_post() && $editable) {
             q('INSERT INTO kyc (user_id, ' . implode(',', $cols) . ") VALUES ($ph)", [$uid, ...array_values($data)]);
         }
         q('UPDATE users SET kyc_status = "submitted" WHERE id = ?', [$uid]);
+        if (!empty($newPayout)) {
+            try {
+                save_payout_account($u, (string)$data['bank_code'], (string)$data['bank_name'], (string)$data['account_number'], (string)$data['account_name']);
+            } catch (UserError) {
+            }
+        }
         notify_staff('kyc', 'New verification to review', $u['full_name'] . ' submitted verification details.', 'admin/kyc.php?id=' . $uid);
         notify($uid, 'Verification received', 'Thanks, we have your details and documents. A member of our team will review them and contact you to agree a date for your home visit.', 'verification.php', true);
         flash('success', 'Verification submitted. We will contact you to confirm the date of your home visit.');
@@ -221,13 +244,17 @@ app_header('Verification', 'verification');
       <label>Employer / business name<input name="employer_name" required value="<?= $v('employer_name') ?>"></label>
       <label style="grid-column:1/-1">Work or shop address<input name="work_address" required value="<?= $v('work_address') ?>"></label>
       <label>Monthly income <?= $err('monthly_income') ?><input type="number" name="monthly_income" min="0" step="1000" required value="<?= $v('monthly_income') ?>"></label>
-      <?php if ($banks): ?>
+      <?php if ($locked): ?>
+        <div style="grid-column:1/-1" class="bank-box small">Payout account (can't be changed): <strong><?= e($locked['account_name']) ?></strong> · <?= e($locked['bank_name'] . ' · ' . $locked['account_number']) ?></div>
+      <?php elseif ($banks): ?>
         <label>Bank <?= $err('bank_name') ?><select name="bank_code" required><option value="">Choose your bank</option><?php foreach ($banks as $code => $name): ?><option value="<?= e($code) ?>" <?= ($kyc['bank_code'] ?? '') === (string)$code ? 'selected' : '' ?>><?= e($name) ?></option><?php endforeach; ?></select></label>
       <?php else: ?>
         <label>Bank name<input name="bank_name" required value="<?= $v('bank_name') ?>"></label>
       <?php endif; ?>
+      <?php if (!$locked): ?>
       <label>Account number <?= $err('account_number') ?><input name="account_number" inputmode="numeric" pattern="\d{10}" maxlength="10" required value="<?= $v('account_number') ?>"></label>
-      <label>Account name<input name="account_name" required value="<?= $v('account_name') ?>"></label>
+      <?php if (!$banks): ?><label>Account name<input name="account_name" required value="<?= $v('account_name') ?>"></label><?php else: ?><p class="small muted" style="grid-column:1/-1;margin:0">We check the account name with your bank. It must be in your own name, and once saved it can't be changed.</p><?php endif; ?>
+      <?php endif; ?>
     </div>
   </fieldset>
 

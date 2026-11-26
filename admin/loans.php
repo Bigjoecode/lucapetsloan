@@ -152,7 +152,8 @@ if ($id) {
     $daysSaved = (int)q_val('SELECT COUNT(DISTINCT DATE(created_at)) FROM transactions WHERE user_id = ? AND type = "deposit" AND status = "approved"', [$loan['user_id']]);
     $txs = q('SELECT * FROM transactions WHERE loan_id = ? ORDER BY id DESC', [$id])->fetchAll();
     $payoutBusy = (bool)q_val('SELECT 1 FROM transactions WHERE loan_id = ? AND type = "loan_disbursement" AND status = "processing"', [$id]);
-    $flwReady = $loan['status'] === 'approved' && flw_payouts_on() && !empty($kyc['bank_code']) && !$payoutBusy;
+    $payoutAcct = payout_account((int)$loan['user_id']);
+    $flwReady = $loan['status'] === 'approved' && flw_payouts_on() && !empty($payoutAcct['bank_code']) && !$payoutBusy;
     $notes = q('SELECT n.*, u.full_name staff FROM collection_notes n LEFT JOIN users u ON u.id = n.staff_id WHERE n.loan_id = ? ORDER BY n.id DESC', [$id])->fetchAll();
     $waivers = q('SELECT w.*, u.full_name staff FROM loan_waivers w LEFT JOIN users u ON u.id = w.admin_id WHERE w.loan_id = ? ORDER BY w.id DESC', [$id])->fetchAll();
     $dti = $kyc && (float)$kyc['monthly_income'] > 0 ? $s['installment'] / (float)$kyc['monthly_income'] * 100 : null;

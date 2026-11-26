@@ -53,12 +53,18 @@ if (is_post()) {
             flash('success', 'Deposit of ' . money($amount) . ' submitted. Your savings will go up once we confirm the payment.');
         }
 
+        elseif ($action === 'add_bank') {
+            $acct = add_payout_account($u, (string)post('bank_code'), preg_replace('/\D/', '', (string)post('account_number')), (string)post('pin'));
+            flash('success', 'Bank account added: ' . $acct['account_name'] . ' · ' . $acct['bank_name'] . ' ' . $acct['account_number'] . '. You can now withdraw.');
+            redirect('savings.php#withdraw');
+        }
+
         elseif ($action === 'withdraw') {
             $amount = round((float)post('amount'), 2);
             if ($amount < setting('min_withdrawal')) throw new UserError('Minimum withdrawal is ' . money0(setting('min_withdrawal')) . '.');
             check_pin($u, (string)post('pin'));
-            $kyc = q_one('SELECT bank_name, account_number, account_name FROM kyc WHERE user_id = ?', [$uid]);
-            if (!$kyc) throw new UserError('Add your bank details in Verification before withdrawing.');
+            $kyc = payout_account($uid);
+            if (!$kyc) throw new UserError('Add your bank account first.');
             $pdo = db();
             $pdo->beginTransaction();
             try {
@@ -142,8 +148,9 @@ $withdrawable = array_values(array_filter($plans, fn($p) => (float)$p['balance']
 $total = array_sum(array_map(fn($p) => (float)$p['balance'], $plans));
 $earned = array_sum(array_map(fn($p) => (float)$p['interest_earned'], $plans));
 $pending = q('SELECT * FROM transactions WHERE user_id = ? AND status IN ("pending","processing") AND type IN ("deposit","withdrawal") ORDER BY id DESC', [$uid])->fetchAll();
-$payout = q_one('SELECT bank_name, bank_code, account_number, account_name FROM kyc WHERE user_id = ?', [$uid]);
+$payout = payout_account($uid);
 $hasBank = (bool)$payout;
+$banks = !$hasBank && flw_configured() ? flw_banks() : [];
 $cards = user_cards($uid);
 $cardLabel = fn(array $c) => e(($c['brand'] ?: 'Card') . ' •••• ' . $c['last4']);
 
@@ -255,9 +262,18 @@ app_header('Savings', 'savings');
 <dialog id="dlg-withdraw">
   <div class="dlg-head"><h2>Withdraw savings</h2><button class="icon-x" data-close aria-label="Close"><?= icon('x') ?></button></div>
   <div class="dlg-body">
-    <?php if (!$hasBank): ?>
-      <p class="muted">We need your bank details first. Add them in the verification form.</p>
-      <a class="btn btn-primary btn-block" href="<?= url('verification.php') ?>">Go to verification</a>
+    <?php if (!$hasBank && $banks): ?>
+      <p class="muted" style="margin-top:0">Add the bank account your money should go to. It must be in <strong>your own name</strong> (<?= e($u['full_name']) ?>). We check the name with your bank.</p>
+      <div class="alert alert-warn small">Once saved, this account can't be changed in the app, so check it carefully.</div>
+      <form method="post" class="form">
+        <?= csrf_field() ?><input type="hidden" name="action" value="add_bank">
+        <label>Bank<select name="bank_code" required><option value="">Choose your bank</option><?php foreach ($banks as $code => $name): ?><option value="<?= e($code) ?>"><?= e($name) ?></option><?php endforeach; ?></select></label>
+        <label>Account number<input name="account_number" inputmode="numeric" pattern="\d{10}" maxlength="10" required autocomplete="off"></label>
+        <?php if (has_pin($u)): ?><label>PIN <span class="hint">Your 4-digit PIN</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label><?php endif; ?>
+        <button class="btn btn-primary btn-block">Check &amp; save bank account</button>
+      </form>
+    <?php elseif (!$hasBank): ?>
+      <p class="muted">Bank withdrawals aren't available right now. Please call <?= e(SUPPORT_PHONE) ?>.</p>
     <?php elseif (!$withdrawable): ?>
       <p class="muted">You have no savings to withdraw yet.</p>
     <?php else: ?>
@@ -269,7 +285,7 @@ app_header('Savings', 'savings');
         </label>
         <label>Amount<input type="number" name="amount" min="<?= setting('min_withdrawal') ?>" step="50" required></label>
         <?php if (has_pin($u)): ?><label>PIN <span class="hint">Your 4-digit PIN</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label><?php else: ?><div class="alert alert-warn small">Set a 4-digit PIN to protect withdrawals. <a href="<?= url('profile.php#pin') ?>">Set PIN</a></div><?php endif; ?>
-        <p class="muted small"><?= setting('auto_payouts') && flw_payouts_on() && $payout['bank_code'] ? 'Sent instantly to' : 'Paid to' ?> <?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?>.<?php if (flw_payouts_on() && !$payout['bank_code']): ?> <a href="<?= url('profile.php#payout') ?>">Confirm your bank</a> for faster payouts.<?php endif; ?></p>
+        <div class="bank-box small"><?= setting('auto_payouts') && flw_payouts_on() && $payout['bank_code'] ? 'Sent instantly to' : 'Paid to' ?> <strong><?= e($payout['account_name']) ?></strong><br><?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?></div>
         <button class="btn btn-primary btn-block">Request withdrawal</button>
       </form>
     <?php endif; ?>

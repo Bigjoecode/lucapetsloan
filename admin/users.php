@@ -14,6 +14,17 @@ if (is_post()) {
         q('UPDATE users SET status = IF(status = "active", "suspended", "active") WHERE id = ?', [$uid]);
         audit($target['status'] === 'active' ? 'customer.suspend' : 'customer.activate', 'User #' . $uid, $target['full_name']);
         flash('success', 'Account status updated.');
+    } elseif (post('action') === 'reset_payout') {
+        if (!is_super($admin)) {
+            flash('error', 'Only a super admin can reset a payout account.');
+        } elseif ($target) {
+            $old = payout_account($uid);
+            q('UPDATE users SET payout_bank_code = NULL, payout_bank_name = NULL, payout_account_number = NULL, payout_account_name = NULL, payout_set_at = NULL WHERE id = ?', [$uid]);
+            q('UPDATE kyc SET bank_code = NULL, account_number = "", account_name = "" WHERE user_id = ?', [$uid]);
+            audit('customer.payout_reset', 'User #' . $uid, $target['full_name'] . ($old ? ' · was ' . $old['bank_name'] . ' ' . $old['account_number'] : ''));
+            notify($uid, 'Payout account removed', 'Our team removed your payout bank account so you can add the correct one. Add it under Savings → Withdraw. If you did not ask for this, call ' . SUPPORT_PHONE . '.', 'savings.php', true);
+            flash('success', 'Payout account cleared for ' . $target['full_name'] . '. They can add a new one (checked with their bank and PIN).');
+        }
     } elseif (post('action') === 'reset_link') {
         if ($target) {
             audit('customer.reset_link', 'User #' . $uid, $target['full_name']);
@@ -77,6 +88,7 @@ app_header('Customers', 'users', 'admin');
             <?php if ((int)$r['id'] !== (int)$admin['id'] && (!is_staff($r) || is_super($admin))): ?>
             <form method="post" class="row" style="gap:.3rem;flex-wrap:nowrap;justify-content:flex-end">
               <?= csrf_field() ?><input type="hidden" name="user_id" value="<?= $r['id'] ?>">
+              <?php if (is_super($admin) && $r['role'] === 'customer' && !empty($r['payout_account_number'])): ?><button class="btn btn-ghost btn-sm" name="action" value="reset_payout" data-confirm="Remove this customer's payout bank account (<?= e($r['payout_bank_name'] . ' ' . $r['payout_account_number']) ?>)? They will be emailed and can add a new one.">Reset bank</button><?php endif; ?>
               <button class="btn btn-ghost btn-sm" name="action" value="toggle_status" data-confirm="<?= $r['status'] === 'active' ? 'Suspend' : 'Reactivate' ?> this account?"><?= $r['status'] === 'active' ? 'Suspend' : 'Activate' ?></button>
               <a class="btn btn-ghost btn-sm" href="<?= url('statement.php?user=' . $r['id']) ?>" target="_blank">Statement</a>
               <button class="btn btn-ghost btn-sm" name="action" value="reset_link" data-confirm="Create a password reset link for this customer? Only send it after confirming it's really them.">Reset link</button>
