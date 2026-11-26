@@ -12,6 +12,16 @@ if (is_post()) {
         if (!$w) throw new UserError('Request not found.');
         $what = coin_amount($w['amount']) . ' ' . strtoupper($w['coin']);
         $sendNet = coin_amount((float)$w['amount'] - (float)$w['fee']) . ' ' . strtoupper($w['coin']);
+        if ($decision === 'auto') {
+            $why = crypto_auto_payout($wid, true);   // staff approved: limits don't apply
+            flash($why === '' ? 'success' : 'error', $why === '' ? 'Sent automatically: ' . $sendNet . ' is on its way.' : 'Not sent automatically: ' . $why . '.');
+            redirect('admin/crypto.php');
+        }
+        if ($decision === 'check') {
+            crypto_refresh_payout($wid);
+            flash('info', 'Status updated from NOWPayments.');
+            redirect('admin/crypto.php');
+        }
         if ($decision === 'take') {
             crypto_take_for_payout($wid, (int)$admin['id']);
             audit('crypto.withdraw_take', 'Crypto withdrawal #' . $wid, $what . ' moved to the main NOWPayments balance');
@@ -38,6 +48,12 @@ if (is_post()) {
     redirect('admin/crypto.php');
 }
 
+if (crypto_on()) {
+    try {
+        crypto_refresh_payouts();
+    } catch (Throwable $e) {
+    }
+}
 $open = q('SELECT w.*, u.full_name, u.phone, u.np_sub_id FROM crypto_withdrawals w JOIN users u ON u.id = w.user_id WHERE w.status IN ("pending","processing") ORDER BY w.id')->fetchAll();
 $done = q('SELECT w.*, u.full_name FROM crypto_withdrawals w JOIN users u ON u.id = w.user_id WHERE w.status IN ("sent","rejected") ORDER BY w.id DESC LIMIT 20')->fetchAll();
 $deposits = q('SELECT d.*, u.full_name FROM crypto_deposits d JOIN users u ON u.id = d.user_id WHERE d.status <> "waiting" ORDER BY d.id DESC LIMIT 30')->fetchAll();
@@ -54,6 +70,7 @@ app_header('Crypto', 'crypto', 'admin');
 <div class="card">
   <h2>Withdrawals to send</h2>
   <?php if (!$open): ?><p class="muted">Nothing waiting.</p><?php else: ?>
+  <p class="small muted"><?= crypto_auto_on() ? '<strong>Automatic sending is on</strong> (up to $' . number_format(setting('crypto_auto_daily_usd')) . ' per customer per day; first withdrawal to a new address waits here). Press <strong>Approve &amp; send automatically</strong>, or send manually: ' : 'Automatic sending is off (add the NOWPayments 2FA secret under Integrations). Manual steps: ' ?></p>
   <p class="small muted">1. <strong>Move coins</strong> takes them from the customer's wallet to your main NOWPayments balance. 2. Send them from the NOWPayments dashboard → Payouts to the address shown. 3. Paste the transaction hash and press <strong>Mark sent</strong>.</p>
   <div class="table-wrap"><table>
     <thead><tr><th>Customer</th><th>Amount</th><th>To address</th><th>Asked</th><th>Status</th><th></th></tr></thead>
@@ -67,7 +84,11 @@ app_header('Crypto', 'crypto', 'admin');
         <td class="small"><?= e(fdatetime($w['created_at'])) ?></td>
         <td><?= badge($w['status']) ?></td>
         <td>
-          <?php if ($w['status'] === 'pending'): ?>
+          <?php if ($w['status'] === 'processing' && $w['auto']): ?>
+            <span class="badge badge-info">Sending automatically</span><div class="small muted">NOWPayments: <?= e($w['payout_status'] ?: 'creating') ?><?= $w['note'] ? ' · ' . e($w['note']) : '' ?></div>
+            <form method="post" class="row" style="margin-top:.3rem"><?= csrf_field() ?><input type="hidden" name="wid" value="<?= $w['id'] ?>"><button class="btn btn-ghost btn-sm" name="decision" value="check">Check status</button></form>
+          <?php elseif ($w['status'] === 'pending'): ?>
+            <?php if (crypto_auto_on()): ?><form method="post" style="margin-bottom:.3rem"><?= csrf_field() ?><input type="hidden" name="wid" value="<?= $w['id'] ?>"><button class="btn btn-primary btn-sm" name="decision" value="auto" data-confirm="Send <?= e(coin_amount((float)$w['amount'] - (float)$w['fee']) . ' ' . strtoupper($w['coin'])) ?> automatically through NOWPayments now?">Approve &amp; send automatically</button></form><?php endif; ?>
             <form method="post" class="row"><?= csrf_field() ?><input type="hidden" name="wid" value="<?= $w['id'] ?>">
               <button class="btn btn-primary btn-sm" name="decision" value="take" data-confirm="Move <?= e(coin_amount($w['amount']) . ' ' . strtoupper($w['coin'])) ?> out of this customer's wallet?">Move coins</button>
               <input name="note" placeholder="Reason to decline" style="width:auto"><button class="btn btn-ghost btn-sm" name="decision" value="reject">Decline</button></form>

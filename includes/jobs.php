@@ -158,6 +158,15 @@ function run_daily_jobs(int $budgetSeconds = 50): array
         }
     }
 
+    // Automatic crypto payouts on their way: finished → sent, rejected → coins returned.
+    if (crypto_on()) {
+        try {
+            $out['crypto_payouts_checked'] = crypto_refresh_payouts();
+        } catch (Throwable $e) {
+            error_log('[lucapetloan] crypto payout check: ' . $e->getMessage());
+        }
+    }
+
     if (flw_configured()) {
         // 5. Transfers still "sending" after 15 minutes: ask Flutterwave.
         foreach (q('SELECT id FROM transactions WHERE status = "processing" AND provider_ref IS NOT NULL AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)')->fetchAll() as $t) {

@@ -17,6 +17,7 @@ const INTEGRATION_KEYS = [
     'smtp_user'       => 'SMTP_USER',       'smtp_pass' => 'SMTP_PASS',
     'np_api_key'      => 'NP_API_KEY',      'np_ipn_secret' => 'NP_IPN_SECRET',
     'np_email'        => 'NP_EMAIL',        'np_password' => 'NP_PASSWORD',
+    'np_2fa_secret'   => 'NP_2FA_SECRET',
 ];
 
 /** Encryption key: APP_KEY if set, otherwise derived from the database password (both are server-side secrets). */

@@ -27,8 +27,15 @@ if (is_post()) {
             if ($amount > $available + 1e-12) throw new UserError('You can withdraw up to ' . coin_amount($available) . ' ' . strtoupper($coin) . '.');
             [$fee, $net] = withdrawal_fee($amount, true);
             q('INSERT INTO crypto_withdrawals (user_id, coin, amount, fee, address, extra_id) VALUES (?,?,?,?,?,?)', [$uid, $coin, $amount, $fee, $address, $memo ?: null]);
-            notify($uid, 'Crypto withdrawal requested', 'You asked to send ' . coin_amount($amount) . ' ' . strtoupper($coin) . ($fee > 0 ? ' (you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee)' : '') . ' to ' . substr($address, 0, 8) . '…' . substr($address, -6) . '. We check and send crypto withdrawals within 24 hours. If this was not you, call ' . SUPPORT_PHONE . '.', 'crypto.php', true);
-            notify_staff('payments', 'Crypto withdrawal to send', $u['full_name'] . ' asked to withdraw ' . coin_amount($amount) . ' ' . strtoupper($coin) . '.', 'admin/crypto.php');
+            $wid = (int)db()->lastInsertId();   // before anything else is inserted
+            notify($uid, 'Crypto withdrawal requested', 'You asked to send ' . coin_amount($amount) . ' ' . strtoupper($coin) . ($fee > 0 ? ' (you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee)' : '') . ' to ' . substr($address, 0, 8) . '…' . substr($address, -6) . '. If this was not you, call ' . SUPPORT_PHONE . ' right away.', 'crypto.php', true);
+            $why = crypto_auto_payout($wid);
+            if ($why === '') {
+                unset($_SESSION['crypto_usd']);
+                flash('success', coin_amount($net) . ' ' . strtoupper($coin) . ' is on its way to your wallet' . ($fee > 0 ? ' (after the ' . coin_amount($fee) . ' fee)' : '') . '. It usually arrives within minutes; we\'ll email you when it\'s sent.');
+                redirect('crypto.php');
+            }
+            notify_staff('payments', 'Crypto withdrawal to send', $u['full_name'] . ' asked to withdraw ' . coin_amount($amount) . ' ' . strtoupper($coin) . '. Not sent automatically: ' . $why . '.', 'admin/crypto.php');
             flash('success', 'Withdrawal of ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' requested' . ($fee > 0 ? ': you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee' : '') . '. We check and send crypto withdrawals within 24 hours.');
         }
         if ($action === 'refresh') {
@@ -308,7 +315,7 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
       <label>To wallet address <span class="hint">Same coin and network</span><input name="address" required autocomplete="off" style="font-family:monospace"></label>
       <label>Memo / tag <span class="hint">Only if the receiving wallet asks for one</span><input name="extra_id" autocomplete="off"></label>
       <label>PIN<input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label>
-      <p class="small muted" style="margin:0">Our team checks every crypto withdrawal and sends it within 24 hours. Network fees come out of the amount sent.</p>
+      <p class="small muted" style="margin:0"><?= crypto_auto_on() ? 'Most withdrawals are sent automatically within minutes. The first withdrawal to a new address, and large amounts, are checked by our team first (within 24 hours).' : 'Our team checks every crypto withdrawal and sends it within 24 hours.' ?></p>
       <button class="btn btn-primary btn-block">Request withdrawal</button>
     </form>
   </div>

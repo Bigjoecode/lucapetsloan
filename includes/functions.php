@@ -549,7 +549,7 @@ function store_upload(string $field, int $userId): ?string
 }
 
 /** Bump when schema.php or the migrations change: live sites then upgrade themselves on the next visit. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 function ensure_schema(): void
 {
@@ -637,7 +637,11 @@ function run_schema(): array
         'ALTER TABLE users ADD COLUMN payout_account_name VARCHAR(160) NULL',
         'ALTER TABLE users ADD COLUMN payout_set_at DATETIME NULL',
         'ALTER TABLE transactions ADD COLUMN fee DECIMAL(14,2) NOT NULL DEFAULT 0',
-        'ALTER TABLE crypto_withdrawals ADD COLUMN fee DECIMAL(30,10) NOT NULL DEFAULT 0',   // longer messages (collateral notices, sign-in alerts)
+        'ALTER TABLE crypto_withdrawals ADD COLUMN fee DECIMAL(30,10) NOT NULL DEFAULT 0',
+        'ALTER TABLE crypto_withdrawals ADD COLUMN auto TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE crypto_withdrawals ADD COLUMN payout_batch_id VARCHAR(40) NULL',
+        'ALTER TABLE crypto_withdrawals ADD COLUMN payout_id VARCHAR(40) NULL',
+        'ALTER TABLE crypto_withdrawals ADD COLUMN payout_status VARCHAR(20) NULL',   // longer messages (collateral notices, sign-in alerts)
         'ALTER TABLE users ADD COLUMN np_sub_id VARCHAR(30) NULL',
     ];
     foreach ($migrations as $sql) {

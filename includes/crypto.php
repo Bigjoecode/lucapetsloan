@@ -61,7 +61,8 @@ function np_request(string $method, string $path, ?array $payload = null, string
     $err = curl_error($ch);
     curl_close($ch);
     $data = is_string($raw) ? json_decode($raw, true) : null;
-    $ok = $http >= 200 && $http < 300 && is_array($data);
+    // Some endpoints (address check, payout confirmation) answer with a bare "OK" instead of JSON data.
+    $ok = $http >= 200 && $http < 300 && (is_array($data) || is_string($data) || strtoupper(trim((string)$raw)) === 'OK');
     if (!$ok) {
         error_log('[lucapetloan] nowpayments ' . $method . ' ' . $path . ' failed: HTTP ' . $http . ' ' . $err . ' ' . substr((string)$raw, 0, 300));
         $msg = is_array($data) ? ($data['message'] ?? $data['msg'] ?? $data['error'] ?? '') : '';
@@ -469,7 +470,7 @@ function crypto_refresh_deposit(string $paymentId): ?array
  * account to the company's main balance, ready to be sent from the NOWPayments
  * dashboard (Payouts). Staff then record the blockchain transaction hash.
  */
-function crypto_take_for_payout(int $wid, int $staffId): void
+function crypto_take_for_payout(int $wid, ?int $staffId): void
 {
     $w = q_one('SELECT w.*, u.np_sub_id FROM crypto_withdrawals w JOIN users u ON u.id = w.user_id WHERE w.id = ? AND w.status = "pending"', [$wid]);
     if (!$w) {
@@ -484,6 +485,157 @@ function crypto_take_for_payout(int $wid, int $staffId): void
         throw new UserError('NOWPayments refused to move the coins: ' . np_message($res, 'HTTP ' . $res['http']) . '.');
     }
     q('UPDATE crypto_withdrawals SET status = "processing", writeoff_id = ?, staff_id = ? WHERE id = ?', [(string)$res['body']['result']['id'], $staffId, $wid]);
+}
+
+/* ---------- Automatic crypto payouts (like Flutterwave's automatic withdrawals) ---------- */
+
+/** Automatic sending is possible: switched on, NOWPayments connected, and the 2FA secret saved. */
+function crypto_auto_on(): bool
+{
+    return setting('crypto_auto_payouts') && np_configured() && np_2fa_secret() !== '';
+}
+
+function np_2fa_secret(): string
+{
+    return strtoupper(preg_replace('/[\s-]+/', '', int_key('np_2fa_secret')));
+}
+
+/** The current 6-digit code from the NOWPayments 2FA secret (same codes as the authenticator app). */
+function np_2fa_code(int $offset = 0): string
+{
+    require_once __DIR__ . '/totp.php';
+    return totp_code(np_2fa_secret(), intdiv(time(), 30) + $offset);
+}
+
+/** Why a withdrawal must wait for staff instead of going out automatically, or null when it can go now. */
+function crypto_auto_hold(array $w): ?string
+{
+    if (!crypto_auto_on()) {
+        return 'automatic sending is off';
+    }
+    if (!q_val('SELECT 1 FROM crypto_withdrawals WHERE user_id = ? AND address = ? AND status = "sent" AND id <> ? LIMIT 1', [$w['user_id'], $w['address'], $w['id']])) {
+        return 'first withdrawal to this address';
+    }
+    $px = coin_usd($w['coin']);
+    if ($px === null) {
+        return 'no price for ' . strtoupper($w['coin']);
+    }
+    $today = 0.0;
+    foreach (q('SELECT coin, amount FROM crypto_withdrawals WHERE user_id = ? AND auto = 1 AND status IN ("processing","sent") AND created_at >= CURDATE()', [$w['user_id']])->fetchAll() as $o) {
+        $today += (float)$o['amount'] * (coin_usd($o['coin']) ?? 0);
+    }
+    $limit = (float)setting('crypto_auto_daily_usd');
+    if ($today + (float)$w['amount'] * $px > $limit) {
+        return 'over the $' . number_format($limit) . ' daily automatic limit';
+    }
+    return null;
+}
+
+/**
+ * Send a pending withdrawal automatically: move the coins to the main balance, create the payout
+ * (amount after the fee) and confirm it with the 2FA code. Returns '' when sent, or why it is left for staff.
+ */
+function crypto_auto_payout(int $wid, bool $approvedByStaff = false): string
+{
+    $w = q_one('SELECT * FROM crypto_withdrawals WHERE id = ? AND status = "pending"', [$wid]);
+    if (!$w) {
+        return 'already handled';
+    }
+    if (!crypto_auto_on()) {
+        return 'automatic sending is off';
+    }
+    if (!$approvedByStaff && ($why = crypto_auto_hold($w))) {
+        return $why;
+    }
+    $check = np_request('POST', '/payout/validate-address', ['address' => $w['address'], 'currency' => $w['coin'], 'extra_id' => $w['extra_id'] ?: null]);
+    if (!$check['ok']) {
+        return 'address not accepted by NOWPayments (' . np_message($check, 'HTTP ' . $check['http']) . ')';
+    }
+    try {
+        crypto_take_for_payout($wid, null);
+    } catch (UserError $e) {
+        return $e->getMessage();
+    }
+    $net = round((float)$w['amount'] - (float)$w['fee'], 8);
+    $item = ['address' => $w['address'], 'currency' => $w['coin'], 'amount' => $net, 'unique_external_id' => 'lpl-cw-' . $wid, 'ipn_callback_url' => absolute_url('np_webhook.php')];
+    if ($w['extra_id']) {
+        $item['extra_id'] = $w['extra_id'];
+    }
+    $res = np_request('POST', '/payout', ['ipn_callback_url' => absolute_url('np_webhook.php'), 'withdrawals' => [$item]], 'both');
+    $batch = (string)($res['body']['id'] ?? '');
+    $pid = (string)($res['body']['withdrawals'][0]['id'] ?? '');
+    if (!$res['ok'] || $batch === '') {
+        crypto_return_coins($w, 'Automatic payout could not be created: ' . np_message($res, 'HTTP ' . $res['http']));
+        return 'NOWPayments did not create the payout (' . np_message($res, 'HTTP ' . $res['http']) . ')';
+    }
+    q('UPDATE crypto_withdrawals SET auto = 1, payout_batch_id = ?, payout_id = ?, payout_status = "creating" WHERE id = ?', [$batch, $pid ?: null, $wid]);
+    // Confirm with the 2FA code; try the neighbouring 30-second window too in case the clocks differ slightly.
+    $ok = false;
+    foreach ([0, -1, 1] as $off) {
+        $v = np_request('POST', '/payout/' . rawurlencode($batch) . '/verify', ['verification_code' => np_2fa_code($off)], 'both');
+        if ($v['ok']) {
+            $ok = true;
+            break;
+        }
+    }
+    if (!$ok) {
+        q('UPDATE crypto_withdrawals SET note = ? WHERE id = ?', ['Payout created but the 2FA code was refused: confirm it in NOWPayments → Payouts within an hour', $wid]);
+        notify_staff('payments', 'Crypto payout needs confirming', 'Withdrawal #' . $wid . ' was created in NOWPayments but the 2FA code was refused. Confirm it in NOWPayments → Payouts within an hour, or check the 2FA secret under Integrations.', 'admin/crypto.php');
+        return 'payout created but the 2FA code was refused';
+    }
+    q('UPDATE crypto_withdrawals SET payout_status = "verified", note = NULL WHERE id = ?', [$wid]);
+    return '';
+}
+
+/** Coins already moved to the main balance go back to the customer's wallet (payout failed or was rejected). */
+function crypto_return_coins(array $w, string $reason): void
+{
+    $sub = (string)q_val('SELECT np_sub_id FROM users WHERE id = ?', [$w['user_id']]);
+    $res = np_request('POST', '/sub-partner/deposit', ['currency' => $w['coin'], 'amount' => (float)$w['amount'], 'sub_partner_id' => $sub], 'jwt');
+    $back = $res['ok'];
+    q('UPDATE crypto_withdrawals SET status = "rejected", note = ? WHERE id = ?', [mb_substr($reason . ($back ? '' : ' · coins NOT returned automatically, return them in NOWPayments'), 0, 255), $w['id']]);
+    if ($back) {
+        notify((int)$w['user_id'], 'Crypto withdrawal not sent', 'Your withdrawal of ' . coin_amount($w['amount']) . ' ' . strtoupper($w['coin']) . ' could not be sent, so the coins are back in your crypto savings. Please check the address or call ' . SUPPORT_PHONE . '.', 'crypto.php', true);
+    } else {
+        notify_staff('payments', 'Return crypto to a customer', 'Withdrawal #' . $w['id'] . ' failed after the coins were moved. Return ' . coin_amount($w['amount']) . ' ' . strtoupper($w['coin']) . ' to the customer in NOWPayments.', 'admin/crypto.php');
+    }
+}
+
+/** Bring an automatic payout up to date from NOWPayments: finished → sent (with the hash), rejected → coins returned. */
+function crypto_refresh_payout(int $wid): void
+{
+    $w = q_one('SELECT * FROM crypto_withdrawals WHERE id = ? AND status = "processing" AND auto = 1', [$wid]);
+    if (!$w || !$w['payout_id']) {
+        return;
+    }
+    $res = np_request('GET', '/payout/' . rawurlencode($w['payout_id']));
+    $p = $res['body']['withdrawals'][0] ?? $res['body'];
+    $status = strtolower((string)($p['status'] ?? ''));
+    if (!$res['ok'] || $status === '') {
+        return;
+    }
+    q('UPDATE crypto_withdrawals SET payout_status = ? WHERE id = ?', [$status, $wid]);
+    $net = coin_amount((float)$w['amount'] - (float)$w['fee']) . ' ' . strtoupper($w['coin']);
+    if ($status === 'finished') {
+        $n = q('UPDATE crypto_withdrawals SET status = "sent", tx_hash = ? WHERE id = ? AND status = "processing"', [mb_substr((string)($p['hash'] ?? ''), 0, 255) ?: null, $wid])->rowCount();
+        if ($n) {
+            notify((int)$w['user_id'], 'Crypto sent', $net . ' has been sent to your wallet' . ((float)$w['fee'] > 0 ? ' (' . coin_amount($w['amount']) . ' less the ' . coin_amount($w['fee']) . ' withdrawal fee).' : '.'), 'crypto.php', true);
+            audit('crypto.withdraw_auto_sent', 'Crypto withdrawal #' . $wid, $net . ' · tx ' . ($p['hash'] ?? ''), null);
+        }
+    } elseif ($status === 'rejected') {
+        crypto_return_coins($w, 'Payout rejected by NOWPayments' . (!empty($p['error']) ? ': ' . $p['error'] : ''));
+    }
+}
+
+/** Check every automatic payout still on its way (daily job and admin page). */
+function crypto_refresh_payouts(): int
+{
+    $n = 0;
+    foreach (q('SELECT id FROM crypto_withdrawals WHERE status = "processing" AND auto = 1 AND created_at > NOW() - INTERVAL 7 DAY')->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        crypto_refresh_payout((int)$id);
+        $n++;
+    }
+    return $n;
 }
 
 /* ---------- Live market (public prices from CoinGecko; no key, cached on the server) ---------- */
