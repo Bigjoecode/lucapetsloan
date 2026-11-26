@@ -14,6 +14,44 @@ if (is_post()) {
     $cust = q_one('SELECT * FROM users WHERE id = ?', [$uid]);
     $k = q_one('SELECT * FROM kyc WHERE user_id = ?', [$uid]);
     $action = post('action');
+    if ($cust && in_array($action, ['verify_now', 'revoke'], true)) {
+        if (!can('kyc')) {
+            flash('error', 'Only staff who handle verifications can do this.');
+            redirect('admin/kyc.php?id=' . $uid);
+        }
+        $note = trim(mb_substr((string)post('note'), 0, 500));
+        if (mb_strlen($note) < 5) {
+            flash('error', $action === 'revoke' ? 'Give the customer a reason.' : 'Add a short note on how you verified this customer (e.g. "Met at the office with original ID").');
+            redirect('admin/kyc.php?id=' . $uid);
+        }
+        if ($action === 'verify_now') {
+            if ($cust['kyc_status'] === 'verified') {
+                flash('info', $cust['full_name'] . ' is already verified.');
+                redirect('admin/kyc.php?id=' . $uid);
+            }
+            if ($k) {
+                q('UPDATE kyc SET visit_notes = TRIM(CONCAT(COALESCE(visit_notes, ""), ?)), reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL WHERE user_id = ?',
+                    ["\nVerified by " . $admin['full_name'] . ' without the usual home visit: ' . $note, $admin['id'], $uid]);
+            }
+            q('UPDATE users SET kyc_status = "verified" WHERE id = ?', [$uid]);
+            audit('kyc.verify_admin', 'User #' . $uid, $cust['full_name'] . ' · ' . $note);
+            notify($uid, 'You are verified ✅', 'Your account has been verified by our team. You can now apply for a loan.', 'loans.php#apply', true);
+            flash('success', $cust['full_name'] . ' is now verified.' . ($k ? '' : ' They have not given bank details yet, so loans will need to be paid out manually until they add them.'));
+        } else {
+            if ($cust['kyc_status'] !== 'verified') {
+                flash('info', $cust['full_name'] . ' is not verified.');
+                redirect('admin/kyc.php?id=' . $uid);
+            }
+            q('UPDATE users SET kyc_status = ? WHERE id = ?', [$k ? 'submitted' : 'none', $uid]);
+            if ($k) {
+                q('UPDATE kyc SET rejection_reason = NULL, reviewed_by = ?, reviewed_at = NOW() WHERE user_id = ?', [$admin['id'], $uid]);
+            }
+            audit('kyc.revoke', 'User #' . $uid, $cust['full_name'] . ' · ' . $note);
+            notify($uid, 'Verification withdrawn', 'Your verification has been withdrawn: ' . $note . '. New loans are paused until it is reviewed again. Call ' . SUPPORT_PHONE . ' if you have questions.', 'verification.php', true);
+            flash('success', 'Verification withdrawn for ' . $cust['full_name'] . '. They have been told why.');
+        }
+        redirect('admin/kyc.php?id=' . $uid);
+    }
     if (!$cust || !$k) {
         flash('error', 'Verification record not found.');
         redirect('admin/kyc.php');
@@ -98,9 +136,13 @@ if (is_post()) {
         $checks = array_intersect((array)($_POST['checks'] ?? []), ['Address confirmed', 'Original ID sighted', 'NIN slip sighted', 'Customer met in person', 'Business/workplace seen', 'Guarantor contacted', 'Photo matches customer', 'Collateral seen and matches description']);
         $fullNotes = trim(($checks ? '✔ ' . implode(' · ✔ ', $checks) . "\n" : '') . $notes);
         if ($result === 'verified') {
+            if ($cust['kyc_status'] !== 'visit_scheduled' && trim($notes) === '') {
+                flash('error', 'No home visit was scheduled. Add a note on how you verified this customer before verifying.');
+                redirect('admin/kyc.php?id=' . $uid);
+            }
             q('UPDATE kyc SET visit_notes = ?, reviewed_by = ?, reviewed_at = NOW(), rejection_reason = NULL WHERE user_id = ?', [$fullNotes, $admin['id'], $uid]);
             q('UPDATE users SET kyc_status = "verified" WHERE id = ?', [$uid]);
-            audit('kyc.verify', 'User #' . $uid, $cust['full_name']);
+            audit('kyc.verify', 'User #' . $uid, $cust['full_name'] . ($cust['kyc_status'] !== 'visit_scheduled' ? ' · without a scheduled visit · ' . mb_substr($notes, 0, 200) : ''));
             notify($uid, 'You are verified ✅', 'Your home visit is complete. You can now apply for a loan.', 'loans.php#apply', true);
             flash('success', $cust['full_name'] . ' is now verified.');
         } elseif ($result === 'rejected') {
@@ -124,8 +166,31 @@ if ($id) {
     $k = q_one('SELECT k.*, u.full_name, u.email, u.phone, u.kyc_status, u.created_at joined, r.full_name reviewer
                 FROM kyc k JOIN users u ON u.id = k.user_id LEFT JOIN users r ON r.id = k.reviewed_by WHERE k.user_id = ?', [$id]);
     if (!$k) {
-        flash('error', 'This customer has not submitted verification yet.');
-        redirect('admin/kyc.php');
+        $c = q_one('SELECT * FROM users WHERE id = ? AND role = "customer"', [$id]);
+        if (!$c) {
+            flash('error', 'Customer not found.');
+            redirect('admin/kyc.php');
+        }
+        app_header('Verification · ' . $c['full_name'], 'kyc', 'admin');
+        ?>
+        <div><a class="small" href="kyc">← Verifications</a><h2 style="margin:.2rem 0 0"><?= e($c['full_name']) ?></h2><span class="muted small"><?= e($c['phone']) ?> · <?= e($c['email']) ?> · joined <?= fdate($c['created_at']) ?></span> <?= badge($c['kyc_status']) ?></div>
+        <div class="card">
+          <h2><?= icon('shield', 18) ?> No verification details yet</h2>
+          <p class="muted">This customer hasn't filled in the verification form (ID, BVN, NIN, guarantor, collateral, bank details). You can ask them to complete it in the app, or verify them now if you have checked them another way.</p>
+          <?php if ($c['kyc_status'] === 'verified'): ?>
+            <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="action" value="revoke"><input type="hidden" name="user_id" value="<?= $id ?>">
+              <label>Reason for withdrawing verification <span class="hint">Shown to the customer</span><input name="note" required minlength="5" maxlength="500"></label>
+              <button class="btn btn-danger" data-confirm="Withdraw this customer's verification?">Withdraw verification</button></form>
+          <?php elseif (can('kyc')): ?>
+            <div class="alert alert-warn small">Without the form there are no bank details, BVN/NIN checks, guarantor or collateral on file. Loans to this customer will need to be paid out manually.</div>
+            <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="action" value="verify_now"><input type="hidden" name="user_id" value="<?= $id ?>">
+              <label>How did you verify them? <span class="hint">Kept in the audit log</span><textarea name="note" required minlength="5" maxlength="500" placeholder="e.g. Met at the office, original NIN slip and ID seen, address confirmed by phone"></textarea></label>
+              <button class="btn btn-primary" data-confirm="Verify this customer without the verification form?"><?= icon('check', 16) ?> Verify customer</button></form>
+          <?php endif; ?>
+        </div>
+        <?php
+        app_footer();
+        exit;
     }
     $savings = savings_total($id);
     $officers = array_filter(q('SELECT * FROM users WHERE role IN ("admin","super_admin") AND status = "active" ORDER BY full_name')->fetchAll(), fn($s) => can('visits', $s));
@@ -247,10 +312,10 @@ if ($id) {
         </div>
         <?php endif; ?>
 
-        <?php if (in_array($k['kyc_status'], ['submitted', 'visit_scheduled'], true)): ?>
-        <div class="card">
-          <h2><?= icon('check', 18) ?> Record visit outcome</h2>
-          <?php if ($k['kyc_status'] === 'submitted'): ?><p class="muted small">Normally you schedule and complete a visit first. You can still reject here if the documents are clearly invalid.</p><?php endif; ?>
+        <?php if (in_array($k['kyc_status'], ['submitted', 'visit_scheduled', 'rejected'], true)): ?>
+        <div class="card" id="decide">
+          <h2><?= icon('check', 18) ?> <?= $k['kyc_status'] === 'visit_scheduled' ? 'Record visit outcome' : 'Verify or reject' ?></h2>
+          <?php if ($k['kyc_status'] !== 'visit_scheduled'): ?><p class="muted small">Normally you schedule and complete a home visit first. You can still verify now: tick what you checked and <strong>write a note on how you verified them</strong> (kept in the audit log).</p><?php endif; ?>
           <form method="post" class="form">
             <?= csrf_field() ?><input type="hidden" name="action" value="outcome"><input type="hidden" name="user_id" value="<?= $id ?>">
             <div class="grid" style="gap:.4rem">
@@ -261,9 +326,20 @@ if ($id) {
             <label>Officer notes<textarea name="visit_notes" placeholder="What did the officer observe at the address?"></textarea></label>
             <label>Reason (if rejecting) <span class="hint">Shown to the customer</span><input name="rejection_reason" maxlength="255"></label>
             <div class="row">
-              <button class="btn btn-primary" name="result" value="verified" <?= $k['kyc_status'] !== 'visit_scheduled' ? 'disabled title="Schedule and complete the visit first"' : '' ?>><?= icon('check', 16) ?> Visit done, verify</button>
+              <button class="btn btn-primary" name="result" value="verified" <?= $k['kyc_status'] !== 'visit_scheduled' ? 'data-confirm="Verify without a completed home visit? Make sure you wrote how you checked them."' : '' ?>><?= icon('check', 16) ?> Visit done, verify</button>
               <button class="btn btn-danger" name="result" value="rejected" data-confirm="Reject this verification?"><?= icon('x', 16) ?> Reject</button>
             </div>
+          </form>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($k['kyc_status'] === 'verified' && can('kyc')): ?>
+        <div class="card">
+          <h2><?= icon('shield', 18) ?> Withdraw verification</h2>
+          <p class="muted small">Use this if something turns out to be wrong. The customer can't take new loans until they are verified again; loans they already have are not affected.</p>
+          <form method="post" class="form"><?= csrf_field() ?><input type="hidden" name="action" value="revoke"><input type="hidden" name="user_id" value="<?= $id ?>">
+            <label>Reason <span class="hint">Shown to the customer</span><input name="note" required minlength="5" maxlength="500"></label>
+            <button class="btn btn-danger" data-confirm="Withdraw this customer's verification?">Withdraw verification</button>
           </form>
         </div>
         <?php endif; ?>
