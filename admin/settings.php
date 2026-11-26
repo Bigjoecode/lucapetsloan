@@ -23,6 +23,8 @@ if (is_post()) {
         'savings_annual_rate' => $num('savings_annual_rate'),
         'min_deposit'         => (int)$num('min_deposit'),
         'min_daily_saving'    => post('min_daily_saving') === '' ? setting('min_daily_saving') : (int)$num('min_daily_saving'),
+        'withdrawal_fee_percent' => post('withdrawal_fee_percent') === '' ? setting('withdrawal_fee_percent') : $num('withdrawal_fee_percent'),
+        'crypto_withdrawal_fee_percent' => post('crypto_withdrawal_fee_percent') === '' ? setting('crypto_withdrawal_fee_percent') : $num('crypto_withdrawal_fee_percent'),
         'min_withdrawal'      => (int)$num('min_withdrawal'),
         'loan_tenures'        => implode(',', $tenures),
         'manual_deposits'     => (int)(bool)post('manual_deposits'),
@@ -62,6 +64,7 @@ if (is_post()) {
     if ($new['visit_radius_m'] < 50) $errors[] = 'Visit check-in distance must be at least 50 m.';
     if ($new['require_staff_2fa'] && !current_user()['totp_enabled']) $errors[] = 'Turn on two-step sign-in for yourself first (Sign-in security), so you do not lock yourself out.';
     if ($new['min_deposit'] < 1 || $new['min_withdrawal'] < 1 || $new['min_daily_saving'] < 1) $errors[] = 'Minimum amounts must be at least 1.';
+    if ($new['withdrawal_fee_percent'] < 0 || $new['withdrawal_fee_percent'] > 50 || $new['crypto_withdrawal_fee_percent'] < 0 || $new['crypto_withdrawal_fee_percent'] > 50) $errors[] = 'Withdrawal fees must be between 0% and 50%.';
     if (!$tenures) $errors[] = 'Allow at least one loan term.';
     if (!$new['manual_deposits'] && !($new['flw_deposits'] && flw_configured())) $errors[] = 'Keep at least one way for customers to pay in.';
     if ($new['manual_deposits'] && ($new['bank_name'] === '' || !preg_match('/^\d{10}$/', $new['bank_account_number']))) $errors[] = 'Bank transfers need a bank name and a 10-digit account number.';
@@ -124,6 +127,8 @@ app_header('Settings', 'settings', 'admin');
           <label>Smallest daily plan <span class="hint">Lowest daily amount for a savings plan</span><input type="number" name="min_daily_saving" min="1" required value="<?= setting('min_daily_saving') ?>"></label>
           <label>Minimum one-off deposit <span class="hint">Paying a plan's own daily amount is always allowed</span><input type="number" name="min_deposit" min="1" required value="<?= setting('min_deposit') ?>"></label>
           <label>Minimum withdrawal<input type="number" name="min_withdrawal" min="1" required value="<?= setting('min_withdrawal') ?>"></label>
+          <label>Withdrawal fee % <span class="hint">Taken out of each savings withdrawal (0 = free)</span><input type="number" name="withdrawal_fee_percent" min="0" max="50" step="0.1" required value="<?= setting('withdrawal_fee_percent') ?>"></label>
+          <label>Crypto withdrawal fee % <span class="hint">Taken out of each crypto withdrawal</span><input type="number" name="crypto_withdrawal_fee_percent" min="0" max="50" step="0.1" required value="<?= setting('crypto_withdrawal_fee_percent') ?>"></label>
         </div>
         <p class="muted small" style="margin:0">At <?= setting('savings_annual_rate') ?>% a year (<?= round(savings_daily_rate(), 4) ?>% a day), ₦10,000 kept for a year grows to <?= money(10000 * (1 + savings_daily_rate() / 100) ** 365) ?>. For comparison, flexible savings on PiggyVest and Cowrywise pay roughly 10–15% a year.</p>
       </div>

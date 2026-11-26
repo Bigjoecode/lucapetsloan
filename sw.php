@@ -9,10 +9,10 @@ header('Content-Type: application/javascript');
 header('Cache-Control: no-cache');
 $base = BASE_URL;
 ?>
-const VERSION = 'lpl-v9';
+const VERSION = 'lpl-v19';
 const BASE = <?= json_encode($base) ?>;
 const OFFLINE = BASE + '/assets/offline.html';
-const PRECACHE = [OFFLINE, BASE + '/assets/css/style.css?v=10', BASE + '/assets/js/app.js?v=8', BASE + '/assets/icons/icon-192.png?v=2'];
+const PRECACHE = [OFFLINE, BASE + '/assets/css/style.css?v=10', BASE + '/assets/js/app.js?v=9', BASE + '/assets/icons/icon-192.png?v=2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

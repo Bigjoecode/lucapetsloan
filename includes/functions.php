@@ -549,7 +549,7 @@ function store_upload(string $field, int $userId): ?string
 }
 
 /** Bump when schema.php or the migrations change: live sites then upgrade themselves on the next visit. */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 function ensure_schema(): void
 {
@@ -635,7 +635,9 @@ function run_schema(): array
         'ALTER TABLE users ADD COLUMN payout_bank_name VARCHAR(120) NULL',
         'ALTER TABLE users ADD COLUMN payout_account_number VARCHAR(20) NULL',
         'ALTER TABLE users ADD COLUMN payout_account_name VARCHAR(160) NULL',
-        'ALTER TABLE users ADD COLUMN payout_set_at DATETIME NULL',   // longer messages (collateral notices, sign-in alerts)
+        'ALTER TABLE users ADD COLUMN payout_set_at DATETIME NULL',
+        'ALTER TABLE transactions ADD COLUMN fee DECIMAL(14,2) NOT NULL DEFAULT 0',
+        'ALTER TABLE crypto_withdrawals ADD COLUMN fee DECIMAL(30,10) NOT NULL DEFAULT 0',   // longer messages (collateral notices, sign-in alerts)
         'ALTER TABLE users ADD COLUMN np_sub_id VARCHAR(30) NULL',
     ];
     foreach ($migrations as $sql) {
@@ -1148,8 +1150,10 @@ function process_transaction(int $txId, bool $approve, ?int $adminId, string $no
                     accrue_plan_interest((int)$tx['savings_plan_id']);
                     q('UPDATE savings_plans SET balance = balance + ? WHERE id = ?', [$amount, $tx['savings_plan_id']]);
                 }
+                $fee = (float)($tx['fee'] ?? 0);
                 notify($uid, $approve ? 'Withdrawal paid' : 'Withdrawal declined',
-                    money($amount) . ($approve ? ' has been sent to your bank account.' : ' was returned to your savings. ' . $note), 'savings.php', true);
+                    $approve ? money($amount - $fee) . ' has been sent to your bank account' . ($fee > 0 ? ' (' . money($amount) . ' less the ' . money($fee) . ' withdrawal fee).' : '.')
+                             : money($amount) . ' was returned to your savings. ' . $note, 'savings.php', true);
                 break;
 
             case 'loan_repayment':
@@ -1408,6 +1412,14 @@ function server_mail_send(string $to, string $subject, string $html): bool
         $GLOBALS['mail_last_error'] = 'Server mail: the server would not accept the message' . ($err ? ' (' . $err['message'] . ')' : '') . '. Ask your host whether PHP mail is allowed, or use the mailbox password instead.';
     }
     return $ok;
+}
+
+/** Withdrawal fee for an amount: [fee, amount paid out]. */
+function withdrawal_fee(float $amount, bool $crypto = false): array
+{
+    $pct = max(0.0, (float)setting($crypto ? 'crypto_withdrawal_fee_percent' : 'withdrawal_fee_percent'));
+    $fee = $crypto ? round($amount * $pct / 100, 8) : round($amount * $pct / 100, 2);
+    return [$fee, $crypto ? round($amount - $fee, 8) : round($amount - $fee, 2)];
 }
 
 /* ------------------------------------------------------------------ */

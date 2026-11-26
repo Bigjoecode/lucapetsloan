@@ -35,6 +35,20 @@
     })
   );
 
+  // Withdrawal fee: <input data-fee="10" data-fee-out="id"> shows the fee and what is received as you type.
+  document.querySelectorAll('input[data-fee]').forEach((inp) => {
+    const out = document.getElementById(inp.dataset.feeOut), pct = parseFloat(inp.dataset.fee) || 0, coin = !!inp.dataset.feeCoin;
+    if (!out || pct <= 0) return;
+    const base = out.textContent;
+    const show = (v) => coin ? String(+v.toFixed(8)) : fmt(v);
+    inp.addEventListener('input', () => {
+      const a = parseFloat(inp.value);
+      if (!(a > 0)) { out.textContent = base; return; }
+      const fee = a * pct / 100;
+      out.innerHTML = 'Fee (' + pct + '%): <strong>' + show(fee) + '</strong> · You receive: <strong>' + show(a - fee) + '</strong>';
+    });
+  });
+
   // Copy buttons: <button data-copy="text"> copies the text and says so for a moment.
   document.querySelectorAll('[data-copy]').forEach((b) =>
     b.addEventListener('click', () => {

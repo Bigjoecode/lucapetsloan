@@ -76,32 +76,33 @@ if (is_post()) {
                 if ($amount > (float)$plan['balance']) throw new UserError('You only have ' . money($plan['balance']) . ' in that plan.');
                 // Hold the funds now so they can't be spent twice; they are returned if the request is declined.
                 q('UPDATE savings_plans SET balance = balance - ? WHERE id = ?', [$amount, $plan['id']]);
-                q('INSERT INTO transactions (user_id, type, amount, method, savings_plan_id, note) VALUES (?, "withdrawal", ?, "bank_transfer", ?, ?)',
-                    [$uid, $amount, $plan['id'], 'To ' . $kyc['bank_name'] . ' ' . $kyc['account_number'] . ' (' . $kyc['account_name'] . ')']);
+                [$fee, $net] = withdrawal_fee($amount);
+                q('INSERT INTO transactions (user_id, type, amount, fee, method, savings_plan_id, note) VALUES (?, "withdrawal", ?, ?, "bank_transfer", ?, ?)',
+                    [$uid, $amount, $fee, $plan['id'], 'To ' . $kyc['bank_name'] . ' ' . $kyc['account_number'] . ' (' . $kyc['account_name'] . ')' . ($fee > 0 ? ' · ' . money($net) . ' after ' . money($fee) . ' fee' : '')]);
                 $txId = (int)db()->lastInsertId();
                 $pdo->commit();
             } catch (Throwable $e) {
                 $pdo->rollBack();
                 throw $e;
             }
-            notify($uid, 'Withdrawal requested', 'You asked to withdraw ' . money($amount) . ' to ' . $kyc['bank_name'] . ' ' . $kyc['account_number'] . '. We will email you when it is paid. If this was not you, call ' . SUPPORT_PHONE . '.', 'savings.php', true);
+            notify($uid, 'Withdrawal requested', 'You asked to withdraw ' . money($amount) . ' to ' . $kyc['bank_name'] . ' ' . $kyc['account_number'] . ($fee > 0 ? ' (you receive ' . money($net) . ' after the ' . money($fee) . ' withdrawal fee)' : '') . '. We will email you when it is paid. If this was not you, call ' . SUPPORT_PHONE . '.', 'savings.php', true);
             $hold = auto_payout_hold($uid, $txId);
             if ($hold !== null) {
                 notify_staff('payments', 'Withdrawal to check', $u['full_name'] . ' asked to withdraw ' . money($amount) . '. Not sent automatically: ' . $hold . '.', 'admin/payments.php?type=withdrawal');
-                flash('success', 'Withdrawal request for ' . money($amount) . ' sent. For your safety a member of staff will check it first; we pay within 24 hours.');
+                flash('success', 'Withdrawal request for ' . money($amount) . ' sent' . ($fee > 0 ? ' (you receive ' . money($net) . ' after the ' . money($fee) . ' fee)' : '') . '. For your safety a member of staff will check it first; we pay within 24 hours.');
                 redirect($back);
             }
             if (setting('auto_payouts') && flw_payouts_on()) {
                 try {
                     flw_send_withdrawal($txId, null);
-                    flash('success', money($amount) . ' is on its way to your bank account.');
+                    flash('success', money($net) . ' is on its way to your bank account' . ($fee > 0 ? ' (' . money($amount) . ' less the ' . money($fee) . ' fee)' : '') . '.');
                     redirect($back);
                 } catch (UserError $e) {
                     error_log('[lucapetloan] auto payout #' . $txId . ' not sent: ' . $e->getMessage());
                 }
             }
             notify_staff('payments', 'Withdrawal to pay', $u['full_name'] . ' asked to withdraw ' . money($amount) . '.', 'admin/payments.php?type=withdrawal');
-            flash('success', 'Withdrawal request for ' . money($amount) . ' sent. We pay withdrawals into your bank within 24 hours.');
+            flash('success', 'Withdrawal request for ' . money($amount) . ' sent' . ($fee > 0 ? ' (you receive ' . money($net) . ' after the ' . money($fee) . ' fee)' : '') . '. We pay withdrawals into your bank within 24 hours.');
         }
 
         elseif ($action === 'close_plan') {
@@ -283,7 +284,8 @@ app_header('Savings', 'savings');
         <label>From plan
           <select name="plan_id"><?php foreach ($withdrawable as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?> (<?= money($p['balance']) ?>)</option><?php endforeach; ?></select>
         </label>
-        <label>Amount<input type="number" name="amount" min="<?= setting('min_withdrawal') ?>" step="50" required></label>
+        <label>Amount<input type="number" name="amount" min="<?= setting('min_withdrawal') ?>" step="50" required data-fee="<?= setting('withdrawal_fee_percent') ?>" data-fee-out="wd-fee"></label>
+        <?php if (setting('withdrawal_fee_percent') > 0): ?><p class="small muted" style="margin:0" id="wd-fee">Withdrawal fee: <?= setting('withdrawal_fee_percent') ?>% of the amount, taken out of what is sent.</p><?php endif; ?>
         <?php if (has_pin($u)): ?><label>PIN <span class="hint">Your 4-digit PIN</span><input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label><?php else: ?><div class="alert alert-warn small">Set a 4-digit PIN to protect withdrawals. <a href="<?= url('profile.php#pin') ?>">Set PIN</a></div><?php endif; ?>
         <div class="bank-box small"><?= setting('auto_payouts') && flw_payouts_on() && $payout['bank_code'] ? 'Sent instantly to' : 'Paid to' ?> <strong><?= e($payout['account_name']) ?></strong><br><?= e($payout['bank_name'] . ' · ' . $payout['account_number']) ?></div>
         <button class="btn btn-primary btn-block">Request withdrawal</button>

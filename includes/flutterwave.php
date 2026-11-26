@@ -197,7 +197,7 @@ function flw_send_withdrawal(int $txId, ?int $staffId): string
     $res = flw_request('POST', '/transfers', [
         'account_bank'   => $kyc['bank_code'],
         'account_number' => $kyc['account_number'],
-        'amount'         => round((float)$tx['amount'], 2),
+        'amount'         => round((float)$tx['amount'] - (float)($tx['fee'] ?? 0), 2),   // the withdrawal fee stays with us
         'currency'       => 'NGN',
         'debit_currency' => 'NGN',
         'narration'      => APP_NAME . ' savings withdrawal',

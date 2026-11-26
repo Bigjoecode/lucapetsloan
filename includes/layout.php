@@ -182,7 +182,7 @@ function public_footer(): void
     <p class="muted small">&copy; <?= date('Y') ?> <?= e(APP_NAME) ?>. All loans are subject to verification and approval.</p>
   </div>
 </footer>
-<script src="<?= url('assets/js/app.js') ?>?v=8"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=9"></script>
 </body>
 </html>
 <?php
@@ -297,7 +297,7 @@ function app_footer(): void
     <a href="<?= url($href) ?>" class="<?= $key === $active ? 'on' : '' ?>"><?= icon($ic, 22) ?><span><?= e($text) ?></span></a>
   <?php endforeach; ?>
 </nav>
-<script src="<?= url('assets/js/app.js') ?>?v=8"></script>
+<script src="<?= url('assets/js/app.js') ?>?v=9"></script>
 </body>
 </html>
 <?php

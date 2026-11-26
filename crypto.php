@@ -25,10 +25,11 @@ if (is_post()) {
             if (q_val('SELECT 1 FROM crypto_wallets WHERE address = ?', [$address])) throw new UserError('That is a ' . APP_NAME . ' deposit address. Send to your own outside wallet instead.');
             $available = crypto_available($uid, $coin, crypto_balances($uid));
             if ($amount > $available + 1e-12) throw new UserError('You can withdraw up to ' . coin_amount($available) . ' ' . strtoupper($coin) . '.');
-            q('INSERT INTO crypto_withdrawals (user_id, coin, amount, address, extra_id) VALUES (?,?,?,?,?)', [$uid, $coin, $amount, $address, $memo ?: null]);
-            notify($uid, 'Crypto withdrawal requested', 'You asked to send ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' to ' . substr($address, 0, 8) . '…' . substr($address, -6) . '. We check and send crypto withdrawals within 24 hours. If this was not you, call ' . SUPPORT_PHONE . '.', 'crypto.php', true);
+            [$fee, $net] = withdrawal_fee($amount, true);
+            q('INSERT INTO crypto_withdrawals (user_id, coin, amount, fee, address, extra_id) VALUES (?,?,?,?,?,?)', [$uid, $coin, $amount, $fee, $address, $memo ?: null]);
+            notify($uid, 'Crypto withdrawal requested', 'You asked to send ' . coin_amount($amount) . ' ' . strtoupper($coin) . ($fee > 0 ? ' (you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee)' : '') . ' to ' . substr($address, 0, 8) . '…' . substr($address, -6) . '. We check and send crypto withdrawals within 24 hours. If this was not you, call ' . SUPPORT_PHONE . '.', 'crypto.php', true);
             notify_staff('payments', 'Crypto withdrawal to send', $u['full_name'] . ' asked to withdraw ' . coin_amount($amount) . ' ' . strtoupper($coin) . '.', 'admin/crypto.php');
-            flash('success', 'Withdrawal of ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' requested. We check and send crypto withdrawals within 24 hours.');
+            flash('success', 'Withdrawal of ' . coin_amount($amount) . ' ' . strtoupper($coin) . ' requested' . ($fee > 0 ? ': you receive ' . coin_amount($net) . ' after the ' . coin_amount($fee) . ' fee' : '') . '. We check and send crypto withdrawals within 24 hours.');
         }
         if ($action === 'refresh') {
             crypto_sync($uid);
@@ -302,7 +303,8 @@ app_header('Crypto savings', 'crypto', 'app', $on ? 'Your coins, your permanent 
     <form method="post" class="form">
       <?= csrf_field() ?><input type="hidden" name="action" value="withdraw">
       <label>Coin<select name="coin"><?php foreach ($balances as $code => [$amt]): ?><option value="<?= e($code) ?>"><?= e(strtoupper($code)) ?> (<?= e(coin_amount(crypto_available($uid, $code, $balances))) ?> available)</option><?php endforeach; ?></select></label>
-      <label>Amount<input type="number" name="amount" min="0" step="any" required></label>
+      <label>Amount<input type="number" name="amount" min="0" step="any" required data-fee="<?= setting('crypto_withdrawal_fee_percent') ?>" data-fee-out="cw-fee" data-fee-coin="1"></label>
+      <?php if (setting('crypto_withdrawal_fee_percent') > 0): ?><p class="small muted" style="margin:0" id="cw-fee">Withdrawal fee: <?= setting('crypto_withdrawal_fee_percent') ?>% of the amount, taken out of what is sent.</p><?php endif; ?>
       <label>To wallet address <span class="hint">Same coin and network</span><input name="address" required autocomplete="off" style="font-family:monospace"></label>
       <label>Memo / tag <span class="hint">Only if the receiving wallet asks for one</span><input name="extra_id" autocomplete="off"></label>
       <label>PIN<input type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" required></label>

@@ -11,16 +11,17 @@ if (is_post()) {
         $w = q_one('SELECT w.*, u.full_name, u.id uid FROM crypto_withdrawals w JOIN users u ON u.id = w.user_id WHERE w.id = ?', [$wid]);
         if (!$w) throw new UserError('Request not found.');
         $what = coin_amount($w['amount']) . ' ' . strtoupper($w['coin']);
+        $sendNet = coin_amount((float)$w['amount'] - (float)$w['fee']) . ' ' . strtoupper($w['coin']);
         if ($decision === 'take') {
             crypto_take_for_payout($wid, (int)$admin['id']);
             audit('crypto.withdraw_take', 'Crypto withdrawal #' . $wid, $what . ' moved to the main NOWPayments balance');
-            flash('success', $what . ' moved from ' . $w['full_name'] . '\'s wallet to your main NOWPayments balance. Now send it from the NOWPayments dashboard (Payouts) and record the transaction hash here.');
+            flash('success', $what . ' moved from ' . $w['full_name'] . '\'s wallet to your main NOWPayments balance. Now send ' . $sendNet . ' (after the fee) from the NOWPayments dashboard (Payouts) and record the transaction hash here.');
         } elseif ($decision === 'sent') {
             if ($w['status'] !== 'processing') throw new UserError('Move the coins first.');
             $hash = trim((string)post('tx_hash'));
             if (!preg_match('/^[A-Za-z0-9]{20,120}$/', $hash)) throw new UserError('Paste the transaction hash (ID) from the NOWPayments payout.');
             q('UPDATE crypto_withdrawals SET status = "sent", tx_hash = ?, staff_id = ? WHERE id = ?', [$hash, $admin['id'], $wid]);
-            notify((int)$w['uid'], 'Crypto sent', $what . ' has been sent to your wallet.', 'crypto.php', true);
+            notify((int)$w['uid'], 'Crypto sent', $sendNet . ' has been sent to your wallet' . ((float)$w['fee'] > 0 ? ' (' . $what . ' less the ' . coin_amount($w['fee']) . ' withdrawal fee).' : '.'), 'crypto.php', true);
             audit('crypto.withdraw_sent', 'Crypto withdrawal #' . $wid, $what . ' · tx ' . $hash);
             flash('success', 'Marked as sent. ' . $w['full_name'] . ' has been told.');
         } elseif ($decision === 'reject') {
@@ -60,7 +61,7 @@ app_header('Crypto', 'crypto', 'admin');
     <?php foreach ($open as $w): ?>
       <tr>
         <td><?= e($w['full_name']) ?><div class="small muted"><?= e($w['phone']) ?> · wallet <?= e($w['np_sub_id']) ?></div></td>
-        <td><strong><?= e(coin_amount($w['amount'])) ?> <?= e(strtoupper($w['coin'])) ?></strong></td>
+        <td><strong><?= e(coin_amount($w['amount'])) ?> <?= e(strtoupper($w['coin'])) ?></strong><?php if ((float)$w['fee'] > 0): ?><div class="small">send <strong><?= e(coin_amount((float)$w['amount'] - (float)$w['fee'])) ?></strong> · fee <?= e(coin_amount($w['fee'])) ?></div><?php endif; ?></td>
         <td style="max-width:260px;word-break:break-all;font-family:monospace;font-size:.85em"><?= e($w['address']) ?><?= $w['extra_id'] ? '<div>memo: ' . e($w['extra_id']) . '</div>' : '' ?>
           <button class="btn btn-ghost btn-sm" data-copy="<?= e($w['address']) ?>">Copy</button></td>
         <td class="small"><?= e(fdatetime($w['created_at'])) ?></td>

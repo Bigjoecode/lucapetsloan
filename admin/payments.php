@@ -70,7 +70,7 @@ app_header('Payments', 'payments', 'admin');
           <td><?= $t['id'] ?></td>
           <td><strong><?= e($t['full_name']) ?></strong><div class="muted small"><?= e($t['phone']) ?></div></td>
           <td><?= e(label($t['type'])) ?><div class="muted small"><?= $t['plan_name'] ? e($t['plan_name']) : ($t['loan_id'] ? '<a href="loans?id=' . $t['loan_id'] . '">Loan #' . $t['loan_id'] . '</a>' : '') ?></div></td>
-          <td class="num"><strong><?= money($t['amount']) ?></strong></td>
+          <td class="num"><strong><?= money($t['amount']) ?></strong><?php if ($t['type'] === 'withdrawal' && (float)($t['fee'] ?? 0) > 0): ?><div class="small muted">pay <?= money((float)$t['amount'] - (float)$t['fee']) ?> · fee <?= money($t['fee']) ?></div><?php endif; ?></td>
           <td><?= e(payment_methods()[$t['method']] ?? label($t['method'])) ?><div class="muted small"><?= e($t['reference'] ?: '') ?><?= $t['note'] ? ' ' . e($t['note']) : '' ?></div></td>
           <td class="muted small"><?= fdatetime($t['created_at']) ?></td>
           <td><?= badge($t['status']) ?><?= $t['admin_note'] ? '<div class="muted small">' . e($t['admin_note']) . '</div>' : '' ?></td>
@@ -88,7 +88,7 @@ app_header('Payments', 'payments', 'admin');
                   <button class="btn btn-ghost btn-sm" name="decision" value="verify" title="Ask Flutterwave whether this was paid">Check</button>
                 <?php else: ?>
                   <?php if ($t['type'] === 'withdrawal' && flw_payouts_on()): ?>
-                    <button class="btn btn-primary btn-sm" name="decision" value="send" data-confirm="Send <?= e(money($t['amount'])) ?> to the customer's bank through Flutterwave?">Send</button>
+                    <button class="btn btn-primary btn-sm" name="decision" value="send" data-confirm="Send <?= e(money((float)$t['amount'] - (float)($t['fee'] ?? 0))) ?> to the customer's bank through Flutterwave?">Send</button>
                   <?php endif; ?>
                   <button class="btn btn-<?= $t['type'] === 'withdrawal' && flw_payouts_on() ? 'ghost' : 'primary' ?> btn-sm" name="decision" value="approve" title="<?= $t['type'] === 'withdrawal' ? 'Confirm you have sent the money yourself' : 'Confirm the money was received' ?>" <?= $t['type'] === 'withdrawal' ? 'data-confirm="Mark as paid? Only do this if you already sent the money yourself."' : '' ?>><?= icon('check', 14) ?></button>
                 <?php endif; ?>
