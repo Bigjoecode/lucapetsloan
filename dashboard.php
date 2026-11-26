@@ -128,6 +128,7 @@ app_header('Dashboard', 'dashboard', 'app', 'Welcome back, ' . $firstName);
         <div class="total"><small>Total portfolio</small><b class="amt"><?= money($portfolio) ?></b></div>
         <div class="actions">
           <a class="btn btn-glass" href="<?= url('savings.php#withdraw') ?>"><?= icon('send', 18) ?> Withdraw</a>
+          <?php if (swap_on()): ?><a class="btn btn-glass" href="<?= url('crypto.php') ?>#swap"><?= icon('arrow', 18) ?> Swap</a><?php endif; ?>
           <button type="button" class="btn btn-white" data-open="dlg-deposit"><?= icon('plus', 18) ?> Add money</button>
         </div>
       </div>
@@ -139,6 +140,7 @@ app_header('Dashboard', 'dashboard', 'app', 'Welcome back, ' . $firstName);
         <button type="button" data-open="dlg-deposit"><span class="sq sq-green"><?= icon('plus', 24) ?></span>Deposit</button>
         <a href="<?= $repayHref ?>"><span class="sq sq-blue"><?= icon('loan', 24) ?></span><?= $loan && $loan['status'] === 'active' ? 'Repay loan' : 'Get a loan' ?></a>
         <a href="<?= url('crypto.php') ?>"><span class="sq sq-rose"><?= icon('coin', 24) ?></span>Crypto</a>
+        <?php if (swap_on()): ?><a href="<?= url('crypto.php') ?>#swap"><span class="sq sq-gold"><?= icon('arrow', 24) ?></span>Swap ₦⇄USDT</a><?php endif; ?>
         <a href="<?= url('statement.php') ?>"><span class="sq sq-teal"><?= icon('doc', 24) ?></span>Statement</a>
       </div>
     </section>

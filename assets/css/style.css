@@ -445,7 +445,7 @@ html[data-theme="dark"] .tile { background: linear-gradient(180deg, var(--surfac
 html.amounts-hidden .amt { filter: blur(9px); user-select: none; }
 
 /* ---------- Dashboard: quick actions ---------- */
-.qa { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; }
+.qa { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .8rem; }
 .qa a, .qa button { display: grid; justify-items: center; gap: .6rem; padding: .9rem .3rem; border-radius: 16px; background: none; border: 0; color: var(--text); font: 600 .92rem var(--font); cursor: pointer; text-decoration: none !important; transition: background .15s, transform .15s; }
 .qa a:hover, .qa button:hover { background: var(--surface-2); transform: translateY(-2px); }
 .qa .sq { width: 52px; height: 52px; border-radius: 16px; }
