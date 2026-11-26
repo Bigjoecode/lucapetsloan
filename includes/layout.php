@@ -222,6 +222,7 @@ function app_header(string $title, string $active = '', string $area = 'app', st
             'Save' => array_filter([
                 'savings' => ['savings.php', 'Savings', 'piggy'],
                 'crypto'  => ['crypto.php', 'Crypto savings', 'coin'],
+                'swap'    => swap_on() ? ['swap.php', 'Swap ₦⇄USDT', 'arrow'] : null,
                 'ajo'     => ['ajo.php', 'Group savings', 'users'],
             ]),
             'Borrow' => [

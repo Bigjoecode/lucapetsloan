@@ -166,7 +166,7 @@ app_header('Savings', 'savings');
     <button class="btn btn-light btn-sm" data-open="dlg-withdraw" id="withdraw"><?= icon('up', 16) ?> Withdraw</button>
     <a class="btn btn-light btn-sm" href="<?= url('ajo.php') ?>"><?= icon('users', 16) ?> Save with friends</a>
     <?php if (crypto_on()): ?><a class="btn btn-light btn-sm" href="<?= url('crypto.php') ?>"><?= icon('cash', 16) ?> Save in crypto</a><?php endif; ?>
-    <?php if (swap_on()): ?><a class="btn btn-light btn-sm" href="<?= url('crypto.php') ?>#swap"><?= icon('arrow', 16) ?> Swap to USDT</a><?php endif; ?>
+    <?php if (swap_on()): ?><a class="btn btn-light btn-sm" href="<?= url('swap.php') ?>"><?= icon('arrow', 16) ?> Swap to USDT</a><?php endif; ?>
   </div>
 </div>
 
