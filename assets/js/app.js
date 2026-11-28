@@ -63,7 +63,11 @@
   // Links like savings.php#withdraw open the matching dialog
   if (location.hash) {
     const t = document.getElementById(location.hash.slice(1));
-    if (t && t.dataset.open) t.click();
+    if (t && t.dataset.open) {
+      t.click();
+      // Drop the #name so the page shown after the next form send doesn't open the dialog again.
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+    }
   }
 
   // Prefill deposit amount when picking a plan
