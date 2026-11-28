@@ -613,3 +613,8 @@ html[data-theme="dark"] .coin-card { background: linear-gradient(180deg, var(--s
 .swap-rate small { color: var(--muted); font-size: .78rem; }
 .swap-get { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px dashed var(--line); padding-top: .7rem; }
 .swap-get b { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+
+/* Field the browser refused (see app.js) */
+.is-invalid { border-color: var(--bad) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 25%, transparent) !important; }
+input[type=checkbox].is-invalid { outline: 2px solid var(--bad); outline-offset: 2px; }
+.form-problem { margin: .4rem 0; }

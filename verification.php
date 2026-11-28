@@ -88,26 +88,31 @@ if (is_post() && $editable) {
 
     $docs = ['id_doc' => 'ID document', 'photo' => 'Passport photo', 'utility_bill' => 'Utility bill', 'collateral_doc' => 'Collateral photo or document'];
     $uploaded = [];
-    if (!$errors) {
-        $new = [];
+    $draft = $_SESSION['kyc_draft_docs'] ?? [];   // files from an earlier try that had a mistake elsewhere
+    $missing = [];
+    foreach ($docs as $field => $title) {
         try {
-            foreach ($docs as $field => $title) {
-                $stored = store_upload($field, $uid);
-                if ($stored === null && empty($kyc[$field])) {
-                    throw new UserError($title . ' is required.');
-                }
-                if ($stored !== null) {
-                    $new[] = $stored;
-                }
-                $uploaded[$field] = $stored ?? $kyc[$field];
-            }
+            $stored = store_upload($field, $uid);
         } catch (UserError $ex) {
-            $errors['docs'] = $ex->getMessage();
-            array_map('delete_upload', $new);   // don't keep half a submission
+            $errors['docs_' . $field] = $ex->getMessage();
+            $stored = null;
         }
+        if ($stored !== null) {
+            if (!empty($draft[$field])) delete_upload($draft[$field]);
+            $draft[$field] = $stored;
+        }
+        $uploaded[$field] = $draft[$field] ?? ($kyc[$field] ?? null);
+        if (!$uploaded[$field] && !isset($errors['docs_' . $field])) {
+            $missing[] = $title;
+        }
+    }
+    $_SESSION['kyc_draft_docs'] = $draft;
+    if ($missing) {
+        $errors['docs'] = 'Please add: ' . implode(', ', $missing) . '.';
     }
 
     if (!$errors) {
+        unset($_SESSION['kyc_draft_docs']);
         $data += $uploaded;
         $cols = array_keys($data);
         if ($kyc) {
@@ -135,7 +140,11 @@ if (is_post() && $editable) {
         flash('success', 'Verification submitted. We will contact you to confirm the date of your home visit.');
         redirect('verification.php');
     }
-    $kyc = array_merge($kyc ?? [], $data);
+    $kyc = array_merge($kyc ?? [], $data, array_filter($uploaded));
+}
+// Files kept from an earlier try count as uploaded on the form.
+if ($editable && !empty($_SESSION['kyc_draft_docs']) && !is_post()) {
+    $kyc = array_merge($kyc ?? [], $_SESSION['kyc_draft_docs']);
 }
 
 $v = fn($f) => e($kyc[$f] ?? '');
@@ -180,7 +189,10 @@ app_header('Verification', 'verification');
 </div>
 
 <?php if ($errors): ?>
-  <div class="alert alert-error">Please fix the highlighted fields.<?= isset($errors['docs']) ? ' ' . e($errors['docs']) : '' ?><?= isset($errors['consent']) ? ' ' . e($errors['consent']) : '' ?></div>
+  <div class="alert alert-error" id="kyc-errors" tabindex="-1"><strong>Your details were not sent yet. Please fix <?= count($errors) === 1 ? 'this' : 'these' ?>:</strong>
+    <ul style="margin:.4rem 0 0;padding-left:1.2rem"><?php foreach (array_unique($errors) as $msg): ?><li><?= e($msg) ?></li><?php endforeach; ?></ul>
+    <?php if (!empty($_SESSION['kyc_draft_docs'])): ?><p class="small" style="margin:.4rem 0 0">The files you already added are saved, so you don't need to choose them again.</p><?php endif; ?></div>
+  <script>document.getElementById('kyc-errors').scrollIntoView({block: 'center'});</script>
 <?php endif; ?>
 
 <?php if (!$editable && $kyc): ?>
@@ -265,7 +277,7 @@ app_header('Verification', 'verification');
       <label>Next of kin phone<input type="tel" name="nok_phone" required value="<?= $v('nok_phone') ?>"></label>
       <label>Relationship<input name="nok_relationship" required value="<?= $v('nok_relationship') ?>" placeholder="e.g. Spouse, Brother"></label>
       <label>Guarantor name<input name="guarantor_name" required value="<?= $v('guarantor_name') ?>"></label>
-      <label>Guarantor phone<input type="tel" name="guarantor_phone" required value="<?= $v('guarantor_phone') ?>"></label>
+      <label>Guarantor phone <?= $err('guarantor_phone') ?><input type="tel" name="guarantor_phone" required value="<?= $v('guarantor_phone') ?>"></label>
       <label>Guarantor address<input name="guarantor_address" required value="<?= $v('guarantor_address') ?>"></label>
       <label>Guarantor is your<input name="guarantor_relationship" required value="<?= $v('guarantor_relationship') ?>" placeholder="e.g. Employer, Uncle, Church pastor"></label>
     </div>

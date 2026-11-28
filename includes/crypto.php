@@ -385,7 +385,7 @@ function crypto_sync(int $userId): void
     if ($sub === '') {
         return;
     }
-    $res = np_request('GET', '/sub-partner/payments?sub_partner_id=' . rawurlencode($sub) . '&limit=50&page=0&orderBy=desc&sortBy=created_at', null, 'jwt');
+    $res = np_request('GET', '/sub-partner/payments?sub_partner_id=' . rawurlencode($sub) . '&limit=50&page=1&orderBy=desc&sortBy=created_at', null, 'jwt');
     $list = $res['body']['result'] ?? $res['body']['data'] ?? $res['body']['payments'] ?? [];
     if (isset($list['data']) && is_array($list['data'])) {
         $list = $list['data'];

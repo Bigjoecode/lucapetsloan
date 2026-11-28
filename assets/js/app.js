@@ -203,6 +203,41 @@
     );
   });
 
+  // When the browser blocks a form (a field left empty or in the wrong format), show which field and why.
+  // Some phones (notably iPhone Safari) block the form without telling the customer anything.
+  document.querySelectorAll('form').forEach((form) => {
+    let shown = false;
+    form.addEventListener('invalid', (e) => {
+      const field = e.target;
+      field.classList.add('is-invalid');
+      field.addEventListener('input', () => field.classList.remove('is-invalid'), { once: true });
+      field.addEventListener('change', () => field.classList.remove('is-invalid'), { once: true });
+      if (shown) return;
+      shown = true;
+      setTimeout(() => { shown = false; }, 300);
+      const label = field.closest('label');
+      let name = label ? (label.childNodes[0].textContent || '').trim() : '';
+      if (!name && label) name = label.textContent.trim().split(String.fromCharCode(10))[0];
+      if (field.type === 'checkbox') name = 'the confirmation box';
+      let why = field.validationMessage || 'Please check this field.';
+      if (field.validity.valueMissing) why = field.type === 'file' ? 'Please choose a file.' : (field.type === 'checkbox' ? 'Please tick it to continue.' : 'This is required.');
+      else if (field.validity.patternMismatch && field.maxLength > 0) why = 'Enter exactly ' + field.maxLength + ' digits.';
+      else if (field.validity.rangeUnderflow || field.validity.rangeOverflow) why = field.type === 'date' ? 'Please pick a different date.' : why;
+      let box = form.querySelector('.form-problem');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'alert alert-error form-problem';
+        box.setAttribute('role', 'alert');
+        const btn = [...form.querySelectorAll('button:not([type=button])')].pop();
+        (btn ? btn.parentNode : form).insertBefore(box, btn || null);
+      }
+      box.textContent = 'Not sent yet. Check ' + (name ? '"' + name.replace(/\s+/g, ' ').slice(0, 60) + '"' : 'the highlighted field') + ': ' + why;
+      field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setTimeout(() => { try { field.focus({ preventScroll: true }); } catch (_) {} }, 350);
+    }, true);
+    form.addEventListener('input', () => { const b = form.querySelector('.form-problem'); if (b && form.checkValidity()) b.remove(); });
+  });
+
   // "Use my location" for the home-visit address
   const geo = document.getElementById('geo-btn');
   if (geo) {
